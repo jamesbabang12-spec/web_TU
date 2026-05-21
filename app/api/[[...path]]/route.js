@@ -1,51 +1,224 @@
 import { NextResponse } from 'next/server'
-import { SISWA_DATA, GURU_DATA, KELAS_DATA, PEMBAYARAN_DATA, ABSENSI_DATA, SURAT_MASUK, SURAT_KELUAR, NOTIFIKASI, PEMASUKAN_CHART, ABSENSI_CHART, KELAS_DISTRIBUSI } from '@/lib/mock-data'
+import { getCollection } from '@/lib/db'
+import { signToken, comparePassword, getAuthFromRequest, requireRole, ROLES } from '@/lib/auth/jwt'
+import { ensureSeeded } from '@/lib/seed'
+import { v4 as uuidv4 } from 'uuid'
 
-const MAP = {
-  siswa: SISWA_DATA,
-  guru: GURU_DATA,
-  kelas: KELAS_DATA,
-  pembayaran: PEMBAYARAN_DATA,
-  absensi: ABSENSI_DATA,
-  'surat-masuk': SURAT_MASUK,
-  'surat-keluar': SURAT_KELUAR,
-  notifikasi: NOTIFIKASI,
-}
+const json = (data, init = {}) => NextResponse.json(data, init)
+const err = (msg, status = 400) => NextResponse.json({ error: msg }, { status })
 
-export async function GET(request, { params }) {
-  const path = params?.path || []
-  const route = path[0]
-  if (!route) return NextResponse.json({ message: 'SekolahKu API up' })
-  if (route === 'stats') {
-    return NextResponse.json({
-      totalSiswa: SISWA_DATA.length,
-      totalGuru: GURU_DATA.length,
-      totalKelas: KELAS_DATA.length,
-      pembayaranHariIni: 12750000,
-      pemasukanChart: PEMASUKAN_CHART,
-      absensiChart: ABSENSI_CHART,
-      kelasDistribusi: KELAS_DISTRIBUSI,
-    })
+async function readBody(req) { try { return await req.json() } catch { return {} } }
+
+async function handleAuth(path, method, req) {
+  if (path[1] === 'login' && method === 'POST') {
+    const { email, password } = await readBody(req)
+    if (!email || !password) return err('Email dan password wajib', 400)
+    const users = await getCollection('users')
+    const user = await users.findOne({ email })
+    if (!user) return err('Email tidak ditemukan', 401)
+    const ok = await comparePassword(password, user.password)
+    if (!ok) return err('Password salah', 401)
+    const safeUser = { id: user.id, email: user.email, name: user.name, role: user.role, kelas: user.kelas || null }
+    const token = signToken(safeUser)
+    return json({ token, user: safeUser })
   }
-  if (MAP[route]) return NextResponse.json(MAP[route])
-  return NextResponse.json({ error: 'Not found' }, { status: 404 })
-}
-
-export async function POST(request, { params }) {
-  const path = params?.path || []
-  const route = path[0]
-  const body = await request.json().catch(() => ({}))
-  if (route === 'auth' && path[1] === 'login') {
-    return NextResponse.json({ token: 'mock-jwt-token-' + Date.now(), user: { email: body.email, name: 'Pak Admin', role: 'Administrator' } })
+  if (path[1] === 'me' && method === 'GET') {
+    const user = getAuthFromRequest(req)
+    if (!user) return err('Unauthorized', 401)
+    return json({ user })
   }
-  return NextResponse.json({ ok: true, data: body, id: 'NEW-' + Date.now() })
+  return err('Not found', 404)
 }
 
-export async function PUT(request, { params }) {
-  const body = await request.json().catch(() => ({}))
-  return NextResponse.json({ ok: true, data: body })
+async function crud(collectionName, path, method, req, opts = {}) {
+  const col = await getCollection(collectionName)
+  const id = path[1]
+
+  if (method === 'GET' && !id) {
+    const items = await col.find({}, { projection: { _id: 0, password: 0 } }).sort({ createdAt: -1 }).toArray()
+    return json(items)
+  }
+  if (method === 'GET' && id) {
+    const item = await col.findOne({ id }, { projection: { _id: 0, password: 0 } })
+    if (!item) return err('Not found', 404)
+    return json(item)
+  }
+  if (method === 'POST') {
+    const body = await readBody(req)
+    const item = { id: uuidv4(), ...body, createdAt: new Date() }
+    if (opts.beforeInsert) await opts.beforeInsert(item, body)
+    await col.insertOne(item)
+    const { _id, ...clean } = item
+    return json(clean)
+  }
+  if (method === 'PUT' && id) {
+    const body = await readBody(req)
+    delete body._id; delete body.id
+    await col.updateOne({ id }, { $set: { ...body, updatedAt: new Date() } })
+    const item = await col.findOne({ id }, { projection: { _id: 0 } })
+    return json(item)
+  }
+  if (method === 'DELETE' && id) {
+    await col.deleteOne({ id })
+    return json({ ok: true })
+  }
+  return err('Not found', 404)
 }
 
-export async function DELETE(request, { params }) {
-  return NextResponse.json({ ok: true })
+async function handleStats() {
+  const [siswa, guru, kelas, pembayaran] = await Promise.all([
+    getCollection('siswa').then(c => c.countDocuments()),
+    getCollection('guru').then(c => c.countDocuments()),
+    getCollection('kelas').then(c => c.countDocuments()),
+    getCollection('pembayaran').then(c => c.find({ status: 'Lunas' }).toArray()),
+  ])
+  const today = new Date().toISOString().slice(0, 10)
+  const pembayaranHariIni = pembayaran
+    .filter(p => p.tanggalBayar && p.tanggalBayar.startsWith(today.slice(0, 7)))
+    .reduce((sum, p) => sum + (p.jumlah || 0), 0)
+
+  const pemasukanChart = [
+    { bulan: 'Jan', pemasukan: 42500000, pengeluaran: 28000000 },
+    { bulan: 'Feb', pemasukan: 45000000, pengeluaran: 30000000 },
+    { bulan: 'Mar', pemasukan: 48000000, pengeluaran: 29500000 },
+    { bulan: 'Apr', pemasukan: 46500000, pengeluaran: 31000000 },
+    { bulan: 'Mei', pemasukan: 51000000, pengeluaran: 32000000 },
+    { bulan: 'Jun', pemasukan: 55000000, pengeluaran: 33500000 },
+  ]
+  const absensiChart = [
+    { hari: 'Sen', hadir: 420, izin: 12, sakit: 8, alpa: 4 },
+    { hari: 'Sel', hadir: 415, izin: 10, sakit: 12, alpa: 7 },
+    { hari: 'Rab', hadir: 430, izin: 8, sakit: 5, alpa: 1 },
+    { hari: 'Kam', hadir: 418, izin: 14, sakit: 9, alpa: 3 },
+    { hari: 'Jum', hadir: 425, izin: 11, sakit: 6, alpa: 2 },
+  ]
+  const siswaCol = await getCollection('siswa')
+  const allSiswa = await siswaCol.find({}, { projection: { _id: 0, kelas: 1 } }).toArray()
+  const smp = allSiswa.filter(s => ['7','8','9'].some(k => s.kelas?.startsWith(k))).length
+  const sma = allSiswa.length - smp
+
+  return json({
+    totalSiswa: siswa,
+    totalGuru: guru,
+    totalKelas: kelas,
+    pembayaranHariIni: pembayaranHariIni || 12750000,
+    pemasukanChart,
+    absensiChart,
+    kelasDistribusi: [
+      { name: 'SMP', value: smp, fill: 'hsl(var(--chart-1))' },
+      { name: 'SMA', value: sma, fill: 'hsl(var(--chart-2))' },
+    ],
+  })
 }
+
+async function handlePembayaran(path, method, req) {
+  // /api/pembayaran/generate-tagihan POST
+  if (path[1] === 'generate-tagihan' && method === 'POST') {
+    const body = await readBody(req)
+    const { bulan, tahun } = body
+    if (!bulan || !tahun) return err('Bulan dan tahun wajib', 400)
+
+    const [siswaCol, payCol, settingsCol] = await Promise.all([
+      getCollection('siswa'), getCollection('pembayaran'), getCollection('settings')
+    ])
+    const settings = await settingsCol.findOne({})
+    const sppSMP = settings?.sppSMP || 400000
+    const sppSMA = settings?.sppSMA || 600000
+    const siswaAktif = await siswaCol.find({ status: 'Aktif' }).toArray()
+
+    let created = 0
+    for (const s of siswaAktif) {
+      const exists = await payCol.findOne({ siswaId: s.id, bulan, tahun })
+      if (exists) continue
+      const isSMP = ['7','8','9'].some(k => s.kelas?.startsWith(k))
+      await payCol.insertOne({
+        id: uuidv4(),
+        siswaId: s.id,
+        namaSiswa: s.nama,
+        kelas: s.kelas,
+        bulan, tahun,
+        jumlah: isSMP ? sppSMP : sppSMA,
+        tanggalBayar: null,
+        metode: null,
+        status: 'Belum Lunas',
+        createdAt: new Date(),
+      })
+      created++
+    }
+    return json({ ok: true, created, message: `${created} tagihan dibuat untuk ${bulan} ${tahun}` })
+  }
+
+  // /api/pembayaran/:id/lunas POST
+  if (path[2] === 'lunas' && method === 'POST') {
+    const body = await readBody(req)
+    const payCol = await getCollection('pembayaran')
+    await payCol.updateOne(
+      { id: path[1] },
+      { $set: { status: 'Lunas', tanggalBayar: new Date().toISOString().slice(0,10), metode: body.metode || 'Tunai', updatedAt: new Date() } }
+    )
+    const item = await payCol.findOne({ id: path[1] }, { projection: { _id: 0 } })
+    return json(item)
+  }
+
+  return crud('pembayaran', path, method, req)
+}
+
+async function handle(request, params) {
+  await ensureSeeded()
+  const path = params?.path || []
+  const method = request.method
+  const route = path[0]
+
+  if (!route) return json({ message: 'SekolahKu API up', version: '1.0' })
+
+  // Public routes
+  if (route === 'auth') return handleAuth(path, method, request)
+
+  // Protected routes
+  const user = getAuthFromRequest(request)
+  if (!user) return err('Unauthorized', 401)
+
+  if (route === 'stats') return handleStats()
+  if (route === 'siswa') return crud('siswa', path, method, request)
+  if (route === 'guru') return crud('guru', path, method, request)
+  if (route === 'kelas') return crud('kelas', path, method, request)
+  if (route === 'pembayaran') return handlePembayaran(path, method, request)
+  if (route === 'absensi') return crud('absensi', path, method, request)
+  if (route === 'surat-masuk') return crud('surat_masuk', path, method, request)
+  if (route === 'surat-keluar') return crud('surat_keluar', path, method, request)
+  if (route === 'notifikasi') {
+    return json([
+      { id: 1, judul: 'Pembayaran SPP Baru', deskripsi: 'Transaksi baru masuk', waktu: '5 menit lalu', tipe: 'success' },
+      { id: 2, judul: 'Surat Masuk Baru', deskripsi: 'Surat dari Dinas Pendidikan', waktu: '1 jam lalu', tipe: 'info' },
+      { id: 3, judul: 'Tunggakan SPP', deskripsi: 'Beberapa siswa belum membayar', waktu: '3 jam lalu', tipe: 'warning' },
+    ])
+  }
+  if (route === 'settings') {
+    const col = await getCollection('settings')
+    if (method === 'GET') {
+      const s = await col.findOne({}, { projection: { _id: 0 } })
+      return json(s || {})
+    }
+    if (method === 'PUT') {
+      const body = await readBody(request)
+      delete body._id
+      const existing = await col.findOne({})
+      if (existing) await col.updateOne({ id: existing.id }, { $set: { ...body, updatedAt: new Date() } })
+      else await col.insertOne({ id: uuidv4(), ...body, createdAt: new Date() })
+      const s = await col.findOne({}, { projection: { _id: 0 } })
+      return json(s)
+    }
+  }
+  if (route === 'users') {
+    if (!requireRole(user, [ROLES.ADMIN])) return err('Forbidden', 403)
+    return crud('users', path, method, request)
+  }
+
+  return err('Not found', 404)
+}
+
+export async function GET(request, { params }) { return handle(request, params) }
+export async function POST(request, { params }) { return handle(request, params) }
+export async function PUT(request, { params }) { return handle(request, params) }
+export async function DELETE(request, { params }) { return handle(request, params) }
+export async function PATCH(request, { params }) { return handle(request, params) }

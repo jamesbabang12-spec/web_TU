@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/lib/store/ui-store'
-import { GraduationCap, LayoutDashboard, Users, UserCog, School, Wallet, CalendarCheck, Mail, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useAuthStore } from '@/lib/store/auth-store'
+import { canAccess } from '@/lib/auth/roles'
+import { GraduationCap, LayoutDashboard, Users, UserCog, School, Wallet, CalendarCheck, Mail, Settings, ChevronLeft, ChevronRight, Bot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -22,6 +24,10 @@ const NAV = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const { user } = useAuthStore()
+  const role = user?.role || 'admin'
+
+  const visibleNav = NAV.filter((item) => canAccess(role, item.href))
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -44,7 +50,7 @@ export function AppSidebar() {
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/')
             const link = (
               <Link

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { useAuthStore } from '@/lib/store/auth-store'
+import { ROLE_LABELS, ROLE_BADGE_COLOR, canAccess } from '@/lib/auth/roles'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -32,6 +33,8 @@ export function AppTopbar() {
   const { theme, setTheme } = useTheme()
   const { user, logout } = useAuthStore()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const role = user?.role || 'admin'
+  const visibleNav = NAV.filter((n) => canAccess(role, n.href))
 
   const handleLogout = () => {
     logout()
@@ -42,38 +45,21 @@ export function AppTopbar() {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 backdrop-blur-md px-4 sm:px-6">
-      {/* mobile sidebar */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="lg:hidden">
-            <Menu className="h-5 w-5" />
-          </Button>
+          <Button variant="ghost" size="icon" className="lg:hidden"><Menu className="h-5 w-5" /></Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-64 p-0">
           <div className="flex items-center gap-3 h-16 border-b px-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <GraduationCap className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-bold">SekolahKu</span>
-              <span className="text-xs text-muted-foreground">Tata Usaha</span>
-            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GraduationCap className="h-5 w-5" /></div>
+            <div className="flex flex-col"><span className="text-sm font-bold">SekolahKu</span><span className="text-xs text-muted-foreground">Tata Usaha</span></div>
           </div>
           <nav className="p-3 space-y-1">
-            {NAV.map((item) => {
+            {visibleNav.map((item) => {
               const active = pathname === item.href
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                    active ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  <span>{item.label}</span>
+                <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className={cn('flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors', active ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}>
+                  <item.icon className="h-5 w-5" /><span>{item.label}</span>
                 </Link>
               )
             })}
@@ -85,13 +71,11 @@ export function AppTopbar() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input placeholder="Cari siswa, guru, kelas..." className="pl-9 h-9 bg-muted/40 border-transparent focus-visible:bg-background" />
       </div>
-
       <div className="flex-1 md:hidden" />
 
       <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-          <Sun className="h-5 w-5 dark:hidden" />
-          <Moon className="h-5 w-5 hidden dark:block" />
+          <Sun className="h-5 w-5 dark:hidden" /><Moon className="h-5 w-5 hidden dark:block" />
         </Button>
 
         <DropdownMenu>
@@ -102,10 +86,7 @@ export function AppTopbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
-            <DropdownMenuLabel className="flex items-center justify-between">
-              Notifikasi
-              <Badge variant="secondary">{NOTIFIKASI.length} baru</Badge>
-            </DropdownMenuLabel>
+            <DropdownMenuLabel className="flex items-center justify-between">Notifikasi <Badge variant="secondary">{NOTIFIKASI.length} baru</Badge></DropdownMenuLabel>
             <DropdownMenuSeparator />
             <div className="max-h-80 overflow-y-auto">
               {NOTIFIKASI.map((n) => (
@@ -125,20 +106,27 @@ export function AppTopbar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="gap-2 px-2">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">{initials}</AvatarFallback>
-              </Avatar>
+              <Avatar className="h-8 w-8"><AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">{initials}</AvatarFallback></Avatar>
               <div className="hidden sm:flex flex-col items-start leading-tight">
                 <span className="text-sm font-medium">{user?.name || 'Admin'}</span>
-                <span className="text-xs text-muted-foreground">{user?.role || 'Administrator'}</span>
+                <div className="flex items-center gap-1">
+                  <Badge variant="secondary" className={cn('text-[9px] px-1.5 py-0 h-4 font-medium', ROLE_BADGE_COLOR[role])}>{ROLE_LABELS[role] || 'Administrator'}</Badge>
+                </div>
               </div>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Akun Saya</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">{user?.name}</span>
+                <span className="text-xs text-muted-foreground font-normal">{user?.email}</span>
+              </div>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem><User className="mr-2 h-4 w-4" /> Profil</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/settings')}><SettingsIcon className="mr-2 h-4 w-4" /> Pengaturan</DropdownMenuItem>
+            {canAccess(role, '/settings') && (
+              <DropdownMenuItem onClick={() => router.push('/settings')}><SettingsIcon className="mr-2 h-4 w-4" /> Pengaturan</DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" /> Keluar

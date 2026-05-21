@@ -11,14 +11,21 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/lib/store/auth-store'
+import { apiClient } from '@/lib/api/client'
 import { toast } from 'sonner'
-import { GraduationCap, Eye, EyeOff, Loader2, BookOpen, Users, ClipboardCheck, Wallet } from 'lucide-react'
+import { GraduationCap, Eye, EyeOff, Loader2, BookOpen, Users, ClipboardCheck, Wallet, ShieldCheck } from 'lucide-react'
 
 const loginSchema = z.object({
   email: z.string().email('Email tidak valid'),
   password: z.string().min(4, 'Password minimal 4 karakter'),
   remember: z.boolean().optional(),
 })
+
+const DEMO_ACCOUNTS = [
+  { label: 'Admin', email: 'admin@sekolahku.id', password: 'admin123', color: 'bg-blue-500' },
+  { label: 'Tata Usaha', email: 'tu@sekolahku.id', password: 'tu123', color: 'bg-violet-500' },
+  { label: 'Wali Kelas', email: 'wali@sekolahku.id', password: 'wali123', color: 'bg-emerald-500' },
+]
 
 function App() {
   const router = useRouter()
@@ -33,17 +40,28 @@ function App() {
 
   const onSubmit = async (data) => {
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 900))
-    login({ name: 'Pak Admin', email: data.email, role: 'Administrator', avatar: '' }, 'mock-jwt-token-' + Date.now())
-    toast.success('Login berhasil! Selamat datang.')
-    router.push('/dashboard')
+    try {
+      const res = await apiClient.post('/auth/login', { email: data.email, password: data.password })
+      login(res.data.user, res.data.token)
+      toast.success(`Login berhasil! Selamat datang, ${res.data.user.name}`)
+      router.push('/dashboard')
+    } catch (e) {
+      const msg = e?.response?.data?.error || 'Login gagal. Coba lagi.'
+      toast.error(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fillDemo = (acc) => {
+    setValue('email', acc.email)
+    setValue('password', acc.password)
   }
 
   return (
     <div className="min-h-screen w-full flex bg-background">
-      {/* Left: form */}
       <div className="flex w-full lg:w-1/2 items-center justify-center p-6 sm:p-12">
-        <div className="w-full max-w-md space-y-8">
+        <div className="w-full max-w-md space-y-7">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
               <GraduationCap className="h-6 w-6" />
@@ -59,7 +77,7 @@ function App() {
             <p className="text-sm text-muted-foreground">Masuk ke akun Anda untuk mengelola administrasi sekolah</p>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="admin@sekolahku.id" {...register('email')} className="h-11" />
@@ -86,14 +104,26 @@ function App() {
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {loading ? 'Memproses...' : 'Masuk'}
             </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Demo akun: admin@sekolahku.id / admin123
-            </p>
           </form>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">Akun Demo</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {DEMO_ACCOUNTS.map((acc) => (
+                <button key={acc.email} type="button" onClick={() => fillDemo(acc)} className="group flex flex-col items-center gap-1.5 rounded-lg border p-2.5 hover:border-primary hover:bg-muted/50 transition-all">
+                  <div className={`h-7 w-7 rounded-md ${acc.color} flex items-center justify-center`}><ShieldCheck className="h-3.5 w-3.5 text-white" /></div>
+                  <span className="text-xs font-medium">{acc.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Right: illustration */}
       <div className="hidden lg:flex w-1/2 relative overflow-hidden bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-500">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.2),transparent_50%)]" />
         <div className="absolute -top-20 -right-20 h-80 w-80 rounded-full bg-white/10 blur-3xl" />

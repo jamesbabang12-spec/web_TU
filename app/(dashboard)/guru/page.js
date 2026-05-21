@@ -7,14 +7,55 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { GURU_DATA } from '@/lib/mock-data'
-import { Plus, Search, Edit, Trash2, Download, Mail, Phone } from 'lucide-react'
-import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { useCrud } from '@/lib/hooks/use-crud'
+import { TableSkeleton, EmptyState } from '@/components/table-helpers'
+import { Plus, Search, Edit, Trash2, Download, Mail, Phone, UserCog, Loader2 } from 'lucide-react'
+
+const MAPEL = ['Matematika','Bahasa Indonesia','Bahasa Inggris','IPA','IPS','PKN','Agama','Olahraga','Seni Budaya','TIK','Fisika','Kimia','Biologi','Sejarah','Geografi','Ekonomi']
+
+const guruSchema = z.object({
+  nip: z.string().min(5, 'NIP minimal 5 karakter'),
+  nama: z.string().min(2, 'Nama wajib diisi'),
+  mapel: z.string().min(1, 'Mata pelajaran wajib dipilih'),
+  jenisKelamin: z.string().min(1, 'Wajib dipilih'),
+  telepon: z.string().min(8, 'Telepon minimal 8 digit'),
+  email: z.string().email('Email tidak valid'),
+  status: z.string().optional(),
+})
 
 export default function GuruPage() {
-  const [data, setData] = useState(GURU_DATA)
+  const { data, loading, create, update, remove } = useCrud('guru')
   const [search, setSearch] = useState('')
-  const filtered = data.filter(g => !search || g.nama.toLowerCase().includes(search.toLowerCase()) || g.mapel.toLowerCase().includes(search.toLowerCase()))
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [deleteId, setDeleteId] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
+    resolver: zodResolver(guruSchema),
+    defaultValues: { nip: '', nama: '', mapel: '', jenisKelamin: '', telepon: '', email: '', status: 'Aktif' },
+  })
+
+  const filtered = data.filter(g => !search || g.nama?.toLowerCase().includes(search.toLowerCase()) || g.mapel?.toLowerCase().includes(search.toLowerCase()))
+
+  const openCreate = () => { setEditing(null); reset({ nip: '', nama: '', mapel: '', jenisKelamin: '', telepon: '', email: '', status: 'Aktif' }); setOpen(true) }
+  const openEdit = (g) => { setEditing(g); reset(g); setOpen(true) }
+
+  const onSubmit = async (values) => {
+    setSubmitting(true)
+    try {
+      if (editing) await update(editing.id, values)
+      else await create(values)
+      setOpen(false)
+    } finally { setSubmitting(false) }
+  }
 
   return (
     <div className="space-y-6">
@@ -25,7 +66,7 @@ export default function GuruPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-2" /> Export</Button>
-          <Button size="sm" onClick={() => toast.info('Form tambah guru')}><Plus className="h-4 w-4 mr-2" /> Tambah Guru</Button>
+          <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Tambah Guru</Button>
         </div>
       </div>
 
@@ -44,48 +85,88 @@ export default function GuruPage() {
               <Input placeholder="Cari nama atau mata pelajaran..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Guru</TableHead>
-                <TableHead>NIP</TableHead>
-                <TableHead>Mata Pelajaran</TableHead>
-                <TableHead>Kontak</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((g) => {
-                const initials = g.nama.split(' ').filter(x => !x.includes('.')).slice(0,2).map(x => x[0]).join('')
-                return (
-                  <TableRow key={g.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9"><AvatarFallback className="text-xs bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">{initials || 'GR'}</AvatarFallback></Avatar>
-                        <div><p className="font-medium text-sm">{g.nama}</p><p className="text-xs text-muted-foreground">{g.jenisKelamin}</p></div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{g.nip}</TableCell>
-                    <TableCell><Badge variant="outline">{g.mapel}</Badge></TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-xs flex items-center gap-1"><Phone className="h-3 w-3" /> {g.telepon}</span>
-                        <span className="text-xs flex items-center gap-1 text-muted-foreground"><Mail className="h-3 w-3" /> {g.email}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell><Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-400">{g.status}</Badge></TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setData(data.filter(x => x.id !== g.id)); toast.success('Guru dihapus') }}><Trash2 className="h-4 w-4" /></Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+          {loading ? <TableSkeleton cols={6} /> : filtered.length === 0 ? (
+            <EmptyState icon={UserCog} title="Tidak ada data guru" description="Tambah guru pertama untuk memulai" action={<Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Tambah Guru</Button>} />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow><TableHead>Guru</TableHead><TableHead>NIP</TableHead><TableHead>Mata Pelajaran</TableHead><TableHead>Kontak</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((g) => {
+                  const initials = (g.nama || '').split(' ').filter(x => !x.includes('.')).slice(0,2).map(x => x[0]).join('') || 'GR'
+                  return (
+                    <TableRow key={g.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9"><AvatarFallback className="text-xs bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">{initials}</AvatarFallback></Avatar>
+                          <div><p className="font-medium text-sm">{g.nama}</p><p className="text-xs text-muted-foreground">{g.jenisKelamin}</p></div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{g.nip}</TableCell>
+                      <TableCell><Badge variant="outline">{g.mapel}</Badge></TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs flex items-center gap-1"><Phone className="h-3 w-3" /> {g.telepon}</span>
+                          <span className="text-xs flex items-center gap-1 text-muted-foreground"><Mail className="h-3 w-3" /> {g.email}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell><Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-400">{g.status}</Badge></TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(g)}><Edit className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteId(g.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>{editing ? 'Edit Guru' : 'Tambah Guru'}</DialogTitle><DialogDescription>Lengkapi data guru di bawah ini</DialogDescription></DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+            <div className="space-y-1.5"><Label>NIP</Label><Input {...register('nip')} placeholder="196801011990121001" />{errors.nip && <p className="text-xs text-destructive">{errors.nip.message}</p>}</div>
+            <div className="space-y-1.5"><Label>Nama Lengkap</Label><Input {...register('nama')} placeholder="Drs. Budi Pratama" />{errors.nama && <p className="text-xs text-destructive">{errors.nama.message}</p>}</div>
+            <div className="space-y-1.5"><Label>Mata Pelajaran</Label>
+              <Select value={watch('mapel')} onValueChange={(v) => setValue('mapel', v, { shouldValidate: true })}>
+                <SelectTrigger><SelectValue placeholder="Pilih mata pelajaran" /></SelectTrigger>
+                <SelectContent>{MAPEL.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+              </Select>
+              {errors.mapel && <p className="text-xs text-destructive">{errors.mapel.message}</p>}
+            </div>
+            <div className="space-y-1.5"><Label>Jenis Kelamin</Label>
+              <Select value={watch('jenisKelamin')} onValueChange={(v) => setValue('jenisKelamin', v, { shouldValidate: true })}>
+                <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
+                <SelectContent><SelectItem value="Laki-laki">Laki-laki</SelectItem><SelectItem value="Perempuan">Perempuan</SelectItem></SelectContent>
+              </Select>
+              {errors.jenisKelamin && <p className="text-xs text-destructive">{errors.jenisKelamin.message}</p>}
+            </div>
+            <div className="space-y-1.5"><Label>Telepon</Label><Input {...register('telepon')} placeholder="08xxxxxxxxxx" />{errors.telepon && <p className="text-xs text-destructive">{errors.telepon.message}</p>}</div>
+            <div className="space-y-1.5"><Label>Email</Label><Input type="email" {...register('email')} placeholder="guru@sekolahku.id" />{errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}</div>
+            <div className="space-y-1.5 md:col-span-2"><Label>Status</Label>
+              <Select value={watch('status')} onValueChange={(v) => setValue('status', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="Aktif">Aktif</SelectItem><SelectItem value="Tidak Aktif">Tidak Aktif</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="md:col-span-2 mt-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Batal</Button>
+              <Button type="submit" disabled={submitting}>{submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} {editing ? 'Simpan Perubahan' : 'Simpan'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>Hapus data guru?</AlertDialogTitle><AlertDialogDescription>Tindakan ini tidak dapat dibatalkan.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={async () => { await remove(deleteId); setDeleteId(null) }} className="bg-destructive hover:bg-destructive/90">Hapus</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
