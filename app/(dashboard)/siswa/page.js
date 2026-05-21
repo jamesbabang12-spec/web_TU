@@ -15,10 +15,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, Download, Users, Loader2 } from 'lucide-react'
+import { Plus, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, Download, Users, Loader2, FileSpreadsheet, FileText } from 'lucide-react'
 import { KELAS_LIST } from '@/lib/mock-data'
 import { useCrud } from '@/lib/hooks/use-crud'
 import { TableSkeleton, EmptyState } from '@/components/table-helpers'
+import { exportToExcel, exportToPDF } from '@/lib/export'
 
 const siswaSchema = z.object({
   nis: z.string().min(4, 'NIS minimal 4 karakter'),
@@ -93,7 +94,19 @@ export default function SiswaPage() {
           <p className="text-sm text-muted-foreground">Kelola data master siswa sekolah</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-2" /> Export</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-2" /> Export</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportToExcel(filtered.map(s => ({ NIS: s.nis, Nama: s.nama, Kelas: s.kelas, 'Jenis Kelamin': s.jenisKelamin, Telepon: s.telepon, Email: s.email, Alamat: s.alamat, Status: s.status })), `data-siswa-${new Date().toISOString().slice(0,10)}`, 'Data Siswa')}>
+                <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-600" /> Export Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportToPDF({ title: 'Data Siswa SekolahKu', subtitle: `Total: ${filtered.length} siswa - ${new Date().toLocaleDateString('id-ID')}`, columns: ['NIS','Nama','Kelas','JK','Telepon','Status'], rows: filtered.map(s => [s.nis, s.nama, s.kelas, s.jenisKelamin, s.telepon, s.status]), filename: `data-siswa-${new Date().toISOString().slice(0,10)}`, orientation: 'landscape' })}>
+                <FileText className="h-4 w-4 mr-2 text-red-600" /> Export PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Tambah Siswa</Button>
         </div>
       </div>

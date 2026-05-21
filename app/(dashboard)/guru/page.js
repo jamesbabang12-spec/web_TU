@@ -16,7 +16,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useCrud } from '@/lib/hooks/use-crud'
 import { TableSkeleton, EmptyState } from '@/components/table-helpers'
-import { Plus, Search, Edit, Trash2, Download, Mail, Phone, UserCog, Loader2 } from 'lucide-react'
+import { exportToExcel, exportToPDF } from '@/lib/export'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Plus, Search, Edit, Trash2, Download, Mail, Phone, UserCog, Loader2, FileSpreadsheet, FileText } from 'lucide-react'
 
 const MAPEL = ['Matematika','Bahasa Indonesia','Bahasa Inggris','IPA','IPS','PKN','Agama','Olahraga','Seni Budaya','TIK','Fisika','Kimia','Biologi','Sejarah','Geografi','Ekonomi']
 
@@ -65,7 +67,17 @@ export default function GuruPage() {
           <p className="text-sm text-muted-foreground">Kelola data master guru dan tenaga pendidik</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-2" /> Export</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="sm"><Download className="h-4 w-4 mr-2" /> Export</Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportToExcel(filtered.map(g => ({ NIP: g.nip, Nama: g.nama, 'Mata Pelajaran': g.mapel, 'Jenis Kelamin': g.jenisKelamin, Telepon: g.telepon, Email: g.email, Status: g.status })), `data-guru-${new Date().toISOString().slice(0,10)}`, 'Data Guru')}>
+                <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-600" /> Export Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportToPDF({ title: 'Data Guru SekolahKu', subtitle: `Total: ${filtered.length} guru - ${new Date().toLocaleDateString('id-ID')}`, columns: ['NIP','Nama','Mapel','JK','Telepon','Email','Status'], rows: filtered.map(g => [g.nip, g.nama, g.mapel, g.jenisKelamin, g.telepon, g.email, g.status]), filename: `data-guru-${new Date().toISOString().slice(0,10)}`, orientation: 'landscape' })}>
+                <FileText className="h-4 w-4 mr-2 text-red-600" /> Export PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Tambah Guru</Button>
         </div>
       </div>

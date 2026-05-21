@@ -17,8 +17,9 @@ import { z } from 'zod'
 import { useCrud } from '@/lib/hooks/use-crud'
 import { apiClient } from '@/lib/api/client'
 import { TableSkeleton, EmptyState } from '@/components/table-helpers'
-import { Search, Printer, Eye, Wallet, CheckCircle2, XCircle, GraduationCap, Plus, Sparkles, Loader2, MoreHorizontal, DollarSign, Trash2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
+import { Search, Printer, Eye, Wallet, CheckCircle2, XCircle, GraduationCap, Plus, Sparkles, Loader2, MoreHorizontal, DollarSign, Trash2, Download, FileSpreadsheet, FileText } from 'lucide-react'
+import { exportToExcel, exportToPDF } from '@/lib/export'
 import { toast } from 'sonner'
 
 const formatIDR = (v) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v || 0)
@@ -130,6 +131,17 @@ export default function PembayaranPage() {
           <p className="text-sm text-muted-foreground">Kelola pembayaran SPP siswa</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="sm"><Download className="h-4 w-4 mr-2" /> Export</Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportToExcel(filtered.map(p => ({ ID: p.id?.slice(0,8), 'Nama Siswa': p.namaSiswa, Kelas: p.kelas, Bulan: p.bulan, Tahun: p.tahun, Jumlah: p.jumlah, Metode: p.metode, 'Tgl Bayar': p.tanggalBayar, Status: p.status })), `pembayaran-spp-${new Date().toISOString().slice(0,10)}`, 'Pembayaran SPP')}>
+                <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-600" /> Export Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportToPDF({ title: 'Laporan Pembayaran SPP', subtitle: `${filtered.length} transaksi - Total Lunas: ${formatIDR(totalLunas)}, Tunggakan: ${formatIDR(totalBelumLunas)}`, columns: ['ID','Siswa','Kelas','Periode','Jumlah','Metode','Tgl Bayar','Status'], rows: filtered.map(p => [p.id?.slice(0,8), p.namaSiswa, p.kelas, `${p.bulan} ${p.tahun}`, formatIDR(p.jumlah), p.metode || '-', p.tanggalBayar || '-', p.status]), filename: `pembayaran-spp-${new Date().toISOString().slice(0,10)}`, orientation: 'landscape' })}>
+                <FileText className="h-4 w-4 mr-2 text-red-600" /> Export PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button variant="outline" size="sm" onClick={() => setOpenGenerate(true)}><Sparkles className="h-4 w-4 mr-2" /> Generate Tagihan</Button>
           <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Catat Pembayaran</Button>
         </div>

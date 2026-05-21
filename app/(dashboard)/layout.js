@@ -3,6 +3,7 @@
 import { AuthGuard } from '@/components/auth-guard'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppTopbar } from '@/components/app-topbar'
+import { AIChatbot } from '@/components/ai-chatbot'
 
 export default function DashboardLayout({ children }) {
   return (
@@ -15,6 +16,7 @@ export default function DashboardLayout({ children }) {
             {children}
           </main>
         </div>
+        <AIChatbot />
       </div>
     </AuthGuard>
   )

@@ -163,6 +163,74 @@ async function handlePembayaran(path, method, req) {
   return crud('pembayaran', path, method, req)
 }
 
+async function handleChat(path, method, req) {
+  if (method !== 'POST') return err('Method not allowed', 405)
+  const body = await readBody(req)
+  const { message, sessionId, history = [] } = body
+  if (!message) return err('Message wajib diisi', 400)
+
+  // Get school context from DB
+  const [siswaCount, guruCount, kelasCount, payCount, paidCount, settings, siswaSample, guruSample, kelasSample] = await Promise.all([
+    getCollection('siswa').then(c => c.countDocuments()),
+    getCollection('guru').then(c => c.countDocuments()),
+    getCollection('kelas').then(c => c.countDocuments()),
+    getCollection('pembayaran').then(c => c.countDocuments()),
+    getCollection('pembayaran').then(c => c.countDocuments({ status: 'Lunas' })),
+    getCollection('settings').then(c => c.findOne({})),
+    getCollection('siswa').then(c => c.find({}, { projection: { _id: 0, nama: 1, kelas: 1, status: 1 } }).limit(50).toArray()),
+    getCollection('guru').then(c => c.find({}, { projection: { _id: 0, nama: 1, mapel: 1 } }).limit(30).toArray()),
+    getCollection('kelas').then(c => c.find({}, { projection: { _id: 0, nama: 1, tingkat: 1, waliKelas: 1, jumlahSiswa: 1 } }).toArray()),
+  ])
+
+  const systemPrompt = `Anda adalah asisten AI untuk Tata Usaha Sekolah "${settings?.namaSekolah || 'SekolahKu'}".
+Anda membantu admin sekolah menjawab pertanyaan tentang data sekolah dalam Bahasa Indonesia yang ramah dan profesional.
+
+DATA SEKOLAH SAAT INI:
+- Nama Sekolah: ${settings?.namaSekolah || 'SekolahKu'}
+- NPSN: ${settings?.npsn || '-'}
+- Kepala Sekolah: ${settings?.kepalaSekolah || '-'}
+- Total Siswa: ${siswaCount}
+- Total Guru: ${guruCount}
+- Total Kelas: ${kelasCount}
+- Total Tagihan SPP: ${payCount} (Lunas: ${paidCount}, Belum Lunas: ${payCount - paidCount})
+- Tarif SPP SMP: Rp ${(settings?.sppSMP || 400000).toLocaleString('id-ID')}/bulan
+- Tarif SPP SMA: Rp ${(settings?.sppSMA || 600000).toLocaleString('id-ID')}/bulan
+
+DAFTAR SISWA (sampel ${siswaSample.length} dari ${siswaCount}):
+${siswaSample.map(s => `- ${s.nama} (${s.kelas}) - ${s.status}`).join('\n')}
+
+DAFTAR GURU:
+${guruSample.map(g => `- ${g.nama} (${g.mapel})`).join('\n')}
+
+DAFTAR KELAS:
+${kelasSample.map(k => `- ${k.nama} (${k.tingkat}) - Wali: ${k.waliKelas}, ${k.jumlahSiswa} siswa`).join('\n')}
+
+Jawab pertanyaan berdasarkan data di atas. Jika data tidak ada, katakan dengan jujur. Gunakan format yang rapi dengan bullet point jika perlu.`
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history.slice(-6),
+    { role: 'user', content: message },
+  ]
+
+  try {
+    const res = await fetch(`${process.env.EMERGENT_LLM_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.EMERGENT_LLM_KEY}`,
+      },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages, temperature: 0.7 }),
+    })
+    const data = await res.json()
+    if (!res.ok) return err(data?.error?.message || 'AI service error', 502)
+    const reply = data?.choices?.[0]?.message?.content || 'Maaf, tidak dapat memberikan jawaban.'
+    return json({ reply, sessionId: sessionId || uuidv4() })
+  } catch (e) {
+    return err('Gagal menghubungi AI: ' + (e.message || 'unknown'), 500)
+  }
+}
+
 async function handle(request, params) {
   await ensureSeeded()
   const path = params?.path || []
@@ -173,6 +241,7 @@ async function handle(request, params) {
 
   // Public routes
   if (route === 'auth') return handleAuth(path, method, request)
+  if (route === 'chat') return handleChat(path, method, request)
 
   // Protected routes
   const user = getAuthFromRequest(request)
