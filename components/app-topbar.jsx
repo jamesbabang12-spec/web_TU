@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
-import { Bell, Search, Moon, Sun, LogOut, User, Settings as SettingsIcon, Menu, GraduationCap, LayoutDashboard, Users, UserCog, School, Wallet, CalendarCheck, Mail } from 'lucide-react'
+import { Bell, Search, Moon, Sun, LogOut, User, Settings as SettingsIcon, Menu, GraduationCap, LayoutDashboard, Users, UserCog, School, Wallet, CalendarCheck, Mail, ShieldCheck } from 'lucide-react'
 import { NOTIFIKASI } from '@/lib/mock-data'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -24,6 +24,7 @@ const NAV = [
   { href: '/pembayaran', label: 'Pembayaran SPP', icon: Wallet },
   { href: '/absensi', label: 'Absensi Siswa', icon: CalendarCheck },
   { href: '/surat', label: 'Surat Menyurat', icon: Mail },
+  { href: '/users', label: 'Manajemen User', icon: ShieldCheck },
   { href: '/settings', label: 'Pengaturan', icon: SettingsIcon },
 ]
 

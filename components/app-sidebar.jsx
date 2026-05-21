@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { useUIStore } from '@/lib/store/ui-store'
 import { useAuthStore } from '@/lib/store/auth-store'
 import { canAccess } from '@/lib/auth/roles'
-import { GraduationCap, LayoutDashboard, Users, UserCog, School, Wallet, CalendarCheck, Mail, Settings, ChevronLeft, ChevronRight, Bot } from 'lucide-react'
+import { GraduationCap, LayoutDashboard, Users, UserCog, School, Wallet, CalendarCheck, Mail, Settings, ChevronLeft, ChevronRight, Bot, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -18,6 +18,7 @@ const NAV = [
   { href: '/pembayaran', label: 'Pembayaran SPP', icon: Wallet },
   { href: '/absensi', label: 'Absensi Siswa', icon: CalendarCheck },
   { href: '/surat', label: 'Surat Menyurat', icon: Mail },
+  { href: '/users', label: 'Manajemen User', icon: ShieldCheck },
   { href: '/settings', label: 'Pengaturan', icon: Settings },
 ]
 

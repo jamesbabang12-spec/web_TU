@@ -26,12 +26,14 @@ function getClientIp(req) {
 }
 
 // --- Sanitize MongoDB query operators from user input to prevent NoSQL injection ---
-function sanitizeBody(body) {
+function sanitizeBody(body, opts = {}) {
   if (!body || typeof body !== 'object') return body
+  const skipFields = opts.allowPassword ? ['$', '.', '_id', 'id'] : ['$', '.', '_id', 'id', 'password']
   const out = {}
   for (const [k, v] of Object.entries(body)) {
     if (k.startsWith('$') || k.includes('.')) continue  // skip operators & nested paths
-    if (k === '_id' || k === 'password' || k === 'id') continue  // protect critical fields
+    if (k === '_id' || k === 'id') continue
+    if (!opts.allowPassword && k === 'password') continue
     out[k] = v
   }
   return out
@@ -94,7 +96,8 @@ async function crud(collectionName, path, method, req, opts = {}) {
   const id = path[1]
 
   if (method === 'GET' && !id) {
-    const items = await col.find({}, { projection: { _id: 0, password: 0 } }).sort({ createdAt: -1 }).toArray()
+    // Hard limit to prevent unbounded query (production safety)
+    const items = await col.find({}, { projection: { _id: 0, password: 0 } }).sort({ createdAt: -1 }).limit(1000).toArray()
     return json(items)
   }
   if (method === 'GET' && id) {
@@ -112,6 +115,7 @@ async function crud(collectionName, path, method, req, opts = {}) {
   }
   if (method === 'PUT' && id) {
     const body = sanitizeBody(await readBody(req))
+    if (opts.beforeUpdate) await opts.beforeUpdate(body, id)
     await col.updateOne({ id }, { $set: { ...body, updatedAt: new Date() } })
     const item = await col.findOne({ id }, { projection: { _id: 0, password: 0 } })
     return json(item)
@@ -121,6 +125,67 @@ async function crud(collectionName, path, method, req, opts = {}) {
     return json({ ok: true })
   }
   return err('Not found', 404)
+}
+
+// User CRUD with password hashing
+async function handleUsers(path, method, req, currentUser) {
+  const id = path[1]
+  const col = await getCollection('users')
+
+  if (method === 'POST') {
+    const body = sanitizeBody(await readBody(req), { allowPassword: true })
+    if (!body.email || !body.password || !body.name || !body.role) {
+      return err('Email, password, nama, dan role wajib diisi', 400)
+    }
+    if (body.password.length < 6) return err('Password minimal 6 karakter', 400)
+    if (!['admin', 'tu', 'wali_kelas'].includes(body.role)) return err('Role tidak valid', 400)
+    const exists = await col.findOne({ email: body.email })
+    if (exists) return err('Email sudah terdaftar', 400)
+    const { hashPassword } = await import('@/lib/auth/jwt')
+    const item = {
+      id: uuidv4(),
+      email: body.email,
+      name: body.name,
+      role: body.role,
+      kelas: body.kelas || null,
+      password: await hashPassword(body.password),
+      createdAt: new Date(),
+    }
+    await col.insertOne(item)
+    const { _id, password, ...clean } = item
+    return json(clean)
+  }
+  if (method === 'PUT' && id) {
+    const body = sanitizeBody(await readBody(req), { allowPassword: true })
+    const update = { updatedAt: new Date() }
+    if (body.name) update.name = body.name
+    if (body.email) {
+      // Check duplicate email
+      const dup = await col.findOne({ email: body.email, id: { $ne: id } })
+      if (dup) return err('Email sudah digunakan user lain', 400)
+      update.email = body.email
+    }
+    if (body.role) {
+      if (!['admin', 'tu', 'wali_kelas'].includes(body.role)) return err('Role tidak valid', 400)
+      update.role = body.role
+    }
+    if (body.kelas !== undefined) update.kelas = body.kelas
+    if (body.password && body.password.trim()) {
+      if (body.password.length < 6) return err('Password minimal 6 karakter', 400)
+      const { hashPassword } = await import('@/lib/auth/jwt')
+      update.password = await hashPassword(body.password)
+    }
+    await col.updateOne({ id }, { $set: update })
+    const item = await col.findOne({ id }, { projection: { _id: 0, password: 0 } })
+    return json(item)
+  }
+  if (method === 'DELETE' && id) {
+    // Prevent self-deletion
+    if (id === currentUser.id) return err('Tidak dapat menghapus akun sendiri', 400)
+    await col.deleteOne({ id })
+    return json({ ok: true })
+  }
+  return crud('users', path, method, req)
 }
 
 async function handleStats() {
@@ -184,12 +249,16 @@ async function handlePembayaran(path, method, req) {
     const sppSMA = settings?.sppSMA || 600000
     const siswaAktif = await siswaCol.find({ status: 'Aktif' }).toArray()
 
+    // FIX N+1: batch-fetch existing payments for this period instead of querying per student
+    const existingPayments = await payCol.find({ bulan, tahun }).project({ siswaId: 1, _id: 0 }).toArray()
+    const existingIds = new Set(existingPayments.map(p => p.siswaId))
+
     let created = 0
     let emailSent = 0
     const newTagihan = []
+    const docsToInsert = []
     for (const s of siswaAktif) {
-      const exists = await payCol.findOne({ siswaId: s.id, bulan, tahun })
-      if (exists) continue
+      if (existingIds.has(s.id)) continue
       const isSMP = ['7','8','9'].some(k => s.kelas?.startsWith(k))
       const tagihan = {
         id: uuidv4(),
@@ -203,9 +272,12 @@ async function handlePembayaran(path, method, req) {
         status: 'Belum Lunas',
         createdAt: new Date(),
       }
-      await payCol.insertOne(tagihan)
-      newTagihan.push({ ...tagihan, email: s.email })
+      docsToInsert.push(tagihan)
+      newTagihan.push({ ...tagihan, email: s.email, emailOrtu: s.emailOrtu })
       created++
+    }
+    if (docsToInsert.length > 0) {
+      await payCol.insertMany(docsToInsert)  // FIX: batch insert instead of one-by-one
     }
 
     // Send emails in background (don't block response too long)
@@ -258,9 +330,16 @@ async function handlePembayaran(path, method, req) {
       ? await payCol.find({ id: { $in: ids }, status: 'Belum Lunas' }).toArray()
       : await payCol.find({ status: 'Belum Lunas' }).toArray()
 
+    // FIX N+1: batch-fetch all relevant siswa instead of per-tagihan
+    const siswaIds = [...new Set(tagihan.slice(0, 50).map(t => t.siswaId))]
+    const siswaList = siswaIds.length > 0
+      ? await siswaCol.find({ id: { $in: siswaIds } }).toArray()
+      : []
+    const siswaMap = new Map(siswaList.map(s => [s.id, s]))
+
     let sent = 0, failed = 0
     for (const t of tagihan.slice(0, 50)) {
-      const siswa = await siswaCol.findOne({ id: t.siswaId })
+      const siswa = siswaMap.get(t.siswaId)
       const target = siswa?.emailOrtu || siswa?.email
       if (!target) { failed++; continue }
       const { subject, html, text } = emailReminderTunggakan({ namaSiswa: t.namaSiswa, kelas: t.kelas, bulan: t.bulan, tahun: t.tahun, jumlah: t.jumlah, namaSekolah: settings?.namaSekolah })
@@ -420,7 +499,7 @@ async function handle(request, params) {
   if (route === 'users') {
     // Extra guard - already in ROUTE_PERMISSIONS but defense-in-depth
     if (!requireRole(user, [ROLES.ADMIN])) return err('Forbidden', 403)
-    return crud('users', path, method, request)
+    return handleUsers(path, method, request, user)
   }
 
   return err('Not found', 404)
