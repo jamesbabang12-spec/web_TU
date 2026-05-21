@@ -3,6 +3,7 @@ import { getCollection } from '@/lib/db'
 import { signToken, comparePassword, getAuthFromRequest, requireRole, ROLES } from '@/lib/auth/jwt'
 import { ensureSeeded } from '@/lib/seed'
 import { v4 as uuidv4 } from 'uuid'
+import { sendEmail, emailTagihanBaru, emailPembayaranLunas, emailReminderTunggakan } from '@/lib/email/send'
 
 const json = (data, init = {}) => NextResponse.json(data, init)
 const err = (msg, status = 400) => NextResponse.json({ error: msg }, { status })
@@ -115,7 +116,7 @@ async function handlePembayaran(path, method, req) {
   // /api/pembayaran/generate-tagihan POST
   if (path[1] === 'generate-tagihan' && method === 'POST') {
     const body = await readBody(req)
-    const { bulan, tahun } = body
+    const { bulan, tahun, sendEmail: shouldSendEmail } = body
     if (!bulan || !tahun) return err('Bulan dan tahun wajib', 400)
 
     const [siswaCol, payCol, settingsCol] = await Promise.all([
@@ -127,11 +128,13 @@ async function handlePembayaran(path, method, req) {
     const siswaAktif = await siswaCol.find({ status: 'Aktif' }).toArray()
 
     let created = 0
+    let emailSent = 0
+    const newTagihan = []
     for (const s of siswaAktif) {
       const exists = await payCol.findOne({ siswaId: s.id, bulan, tahun })
       if (exists) continue
       const isSMP = ['7','8','9'].some(k => s.kelas?.startsWith(k))
-      await payCol.insertOne({
+      const tagihan = {
         id: uuidv4(),
         siswaId: s.id,
         namaSiswa: s.nama,
@@ -142,22 +145,86 @@ async function handlePembayaran(path, method, req) {
         metode: null,
         status: 'Belum Lunas',
         createdAt: new Date(),
-      })
+      }
+      await payCol.insertOne(tagihan)
+      newTagihan.push({ ...tagihan, email: s.email })
       created++
     }
-    return json({ ok: true, created, message: `${created} tagihan dibuat untuk ${bulan} ${tahun}` })
+
+    // Send emails in background (don't block response too long)
+    if (shouldSendEmail && newTagihan.length > 0) {
+      const tasks = newTagihan.slice(0, 50).map(async (t) => {
+        if (!t.email) return
+        const { subject, html, text } = emailTagihanBaru({ namaSiswa: t.namaSiswa, kelas: t.kelas, bulan, tahun, jumlah: t.jumlah, namaSekolah: settings?.namaSekolah })
+        const r = await sendEmail({ to: t.email, subject, html, text })
+        if (r.ok) emailSent++
+      })
+      await Promise.all(tasks)
+    }
+
+    return json({ ok: true, created, emailSent, message: `${created} tagihan dibuat untuk ${bulan} ${tahun}${shouldSendEmail ? `, ${emailSent} email terkirim` : ''}` })
   }
 
   // /api/pembayaran/:id/lunas POST
   if (path[2] === 'lunas' && method === 'POST') {
     const body = await readBody(req)
     const payCol = await getCollection('pembayaran')
+    const tanggal = new Date().toISOString().slice(0,10)
     await payCol.updateOne(
       { id: path[1] },
-      { $set: { status: 'Lunas', tanggalBayar: new Date().toISOString().slice(0,10), metode: body.metode || 'Tunai', updatedAt: new Date() } }
+      { $set: { status: 'Lunas', tanggalBayar: tanggal, metode: body.metode || 'Tunai', updatedAt: new Date() } }
     )
     const item = await payCol.findOne({ id: path[1] }, { projection: { _id: 0 } })
+
+    // Optional: send confirmation email
+    if (body.sendEmail && item) {
+      const [siswaCol, settingsCol] = await Promise.all([getCollection('siswa'), getCollection('settings')])
+      const siswa = await siswaCol.findOne({ id: item.siswaId })
+      const settings = await settingsCol.findOne({})
+      if (siswa?.email) {
+        const { subject, html, text } = emailPembayaranLunas({ ...item, idTransaksi: item.id, namaSekolah: settings?.namaSekolah })
+        await sendEmail({ to: siswa.email, subject, html, text })
+      }
+    }
     return json(item)
+  }
+
+  // /api/pembayaran/kirim-reminder POST - send reminder to all "Belum Lunas"
+  if (path[1] === 'kirim-reminder' && method === 'POST') {
+    const body = await readBody(req)
+    const ids = body.ids || []
+    const [payCol, siswaCol, settingsCol] = await Promise.all([getCollection('pembayaran'), getCollection('siswa'), getCollection('settings')])
+    const settings = await settingsCol.findOne({})
+
+    const tagihan = ids.length > 0
+      ? await payCol.find({ id: { $in: ids }, status: 'Belum Lunas' }).toArray()
+      : await payCol.find({ status: 'Belum Lunas' }).toArray()
+
+    let sent = 0, failed = 0
+    for (const t of tagihan.slice(0, 50)) {
+      const siswa = await siswaCol.findOne({ id: t.siswaId })
+      if (!siswa?.email) { failed++; continue }
+      const { subject, html, text } = emailReminderTunggakan({ namaSiswa: t.namaSiswa, kelas: t.kelas, bulan: t.bulan, tahun: t.tahun, jumlah: t.jumlah, namaSekolah: settings?.namaSekolah })
+      const r = await sendEmail({ to: siswa.email, subject, html, text })
+      if (r.ok) sent++; else failed++
+    }
+    return json({ ok: true, sent, failed, total: tagihan.length, message: `${sent} reminder terkirim, ${failed} gagal` })
+  }
+
+  // /api/pembayaran/:id/kirim-email POST - send specific email (struk lunas / reminder)
+  if (path[2] === 'kirim-email' && method === 'POST') {
+    const body = await readBody(req)
+    const [payCol, siswaCol, settingsCol] = await Promise.all([getCollection('pembayaran'), getCollection('siswa'), getCollection('settings')])
+    const item = await payCol.findOne({ id: path[1] })
+    if (!item) return err('Tagihan tidak ditemukan', 404)
+    const siswa = await siswaCol.findOne({ id: item.siswaId })
+    if (!siswa?.email) return err('Email siswa tidak tersedia', 400)
+    const settings = await settingsCol.findOne({})
+    const tpl = item.status === 'Lunas'
+      ? emailPembayaranLunas({ ...item, idTransaksi: item.id, namaSekolah: settings?.namaSekolah })
+      : emailReminderTunggakan({ ...item, namaSekolah: settings?.namaSekolah })
+    const r = await sendEmail({ to: siswa.email, ...tpl })
+    return json({ ok: r.ok, error: r.error, to: siswa.email })
   }
 
   return crud('pembayaran', path, method, req)

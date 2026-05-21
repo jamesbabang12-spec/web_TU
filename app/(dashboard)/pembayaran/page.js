@@ -18,8 +18,9 @@ import { useCrud } from '@/lib/hooks/use-crud'
 import { apiClient } from '@/lib/api/client'
 import { TableSkeleton, EmptyState } from '@/components/table-helpers'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
-import { Search, Printer, Eye, Wallet, CheckCircle2, XCircle, GraduationCap, Plus, Sparkles, Loader2, MoreHorizontal, DollarSign, Trash2, Download, FileSpreadsheet, FileText } from 'lucide-react'
+import { Search, Printer, Eye, Wallet, CheckCircle2, XCircle, GraduationCap, Plus, Sparkles, Loader2, MoreHorizontal, DollarSign, Trash2, Download, FileSpreadsheet, FileText, Mail, MailWarning, Send } from 'lucide-react'
 import { exportToExcel, exportToPDF } from '@/lib/export'
+import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
 
 const formatIDR = (v) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v || 0)
@@ -48,6 +49,9 @@ export default function PembayaranPage() {
   const [generating, setGenerating] = useState(false)
   const [genMonth, setGenMonth] = useState(BULAN_LIST[new Date().getMonth()])
   const [genYear, setGenYear] = useState(new Date().getFullYear())
+  const [genSendEmail, setGenSendEmail] = useState(true)
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [openReminderConfirm, setOpenReminderConfirm] = useState(false)
   const [deleteId, setDeleteId] = useState(null)
 
   useEffect(() => {
@@ -105,16 +109,38 @@ export default function PembayaranPage() {
 
   const handleMarkLunas = async (id, metode = 'Tunai') => {
     try {
-      await apiClient.post(`/pembayaran/${id}/lunas`, { metode })
-      toast.success('Pembayaran ditandai sebagai Lunas')
+      await apiClient.post(`/pembayaran/${id}/lunas`, { metode, sendEmail: true })
+      toast.success('Pembayaran ditandai sebagai Lunas — email konfirmasi terkirim')
       refetch()
     } catch (e) { toast.error('Gagal update status') }
+  }
+
+  const handleSendEmail = async (id) => {
+    setSendingEmail(true)
+    try {
+      const res = await apiClient.post(`/pembayaran/${id}/kirim-email`, {})
+      if (res.data.ok) toast.success(`Email terkirim ke ${res.data.to}`)
+      else toast.error(res.data.error || 'Gagal kirim email')
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Gagal kirim email')
+    } finally { setSendingEmail(false) }
+  }
+
+  const handleSendBulkReminder = async () => {
+    setSendingEmail(true)
+    try {
+      const res = await apiClient.post('/pembayaran/kirim-reminder', {})
+      toast.success(res.data.message || 'Reminder terkirim')
+      setOpenReminderConfirm(false)
+    } catch (e) {
+      toast.error('Gagal kirim reminder massal')
+    } finally { setSendingEmail(false) }
   }
 
   const handleGenerate = async () => {
     setGenerating(true)
     try {
-      const res = await apiClient.post('/pembayaran/generate-tagihan', { bulan: genMonth, tahun: genYear })
+      const res = await apiClient.post('/pembayaran/generate-tagihan', { bulan: genMonth, tahun: genYear, sendEmail: genSendEmail })
       toast.success(res.data.message || 'Tagihan berhasil dibuat')
       setOpenGenerate(false)
       refetch()
@@ -140,6 +166,12 @@ export default function PembayaranPage() {
               <DropdownMenuItem onClick={() => exportToPDF({ title: 'Laporan Pembayaran SPP', subtitle: `${filtered.length} transaksi - Total Lunas: ${formatIDR(totalLunas)}, Tunggakan: ${formatIDR(totalBelumLunas)}`, columns: ['ID','Siswa','Kelas','Periode','Jumlah','Metode','Tgl Bayar','Status'], rows: filtered.map(p => [p.id?.slice(0,8), p.namaSiswa, p.kelas, `${p.bulan} ${p.tahun}`, formatIDR(p.jumlah), p.metode || '-', p.tanggalBayar || '-', p.status]), filename: `pembayaran-spp-${new Date().toISOString().slice(0,10)}`, orientation: 'landscape' })}>
                 <FileText className="h-4 w-4 mr-2 text-red-600" /> Export PDF
               </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="sm"><Mail className="h-4 w-4 mr-2" /> Email</Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setOpenReminderConfirm(true)}><MailWarning className="h-4 w-4 mr-2 text-amber-600" /> Kirim Reminder Tunggakan</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <Button variant="outline" size="sm" onClick={() => setOpenGenerate(true)}><Sparkles className="h-4 w-4 mr-2" /> Generate Tagihan</Button>
@@ -197,6 +229,7 @@ export default function PembayaranPage() {
                           <DropdownMenuItem onClick={() => setSelected(p)}><Eye className="h-4 w-4 mr-2" /> Detail</DropdownMenuItem>
                           {p.status !== 'Lunas' && <DropdownMenuItem onClick={() => handleMarkLunas(p.id, 'Tunai')}><DollarSign className="h-4 w-4 mr-2 text-emerald-600" /> Tandai Lunas (Tunai)</DropdownMenuItem>}
                           {p.status !== 'Lunas' && <DropdownMenuItem onClick={() => handleMarkLunas(p.id, 'Transfer')}><DollarSign className="h-4 w-4 mr-2 text-emerald-600" /> Tandai Lunas (Transfer)</DropdownMenuItem>}
+                          <DropdownMenuItem onClick={() => handleSendEmail(p.id)} disabled={sendingEmail}><Send className="h-4 w-4 mr-2 text-blue-600" /> Kirim Email ke Ortu</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setSelected(p)}><Printer className="h-4 w-4 mr-2" /> Cetak Kwitansi</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteId(p.id)}><Trash2 className="h-4 w-4 mr-2" /> Hapus</DropdownMenuItem>
@@ -282,6 +315,13 @@ export default function PembayaranPage() {
               <p>• SMA: {formatIDR(settings.sppSMA)}/bulan</p>
               <p className="text-muted-foreground mt-2">Sistem akan otomatis melewati siswa yang sudah memiliki tagihan untuk periode ini.</p>
             </div>
+            <div className="flex items-center gap-2 p-3 rounded-lg border bg-blue-50/50 dark:bg-blue-950/30">
+              <Checkbox id="send-email" checked={genSendEmail} onCheckedChange={(v) => setGenSendEmail(!!v)} />
+              <label htmlFor="send-email" className="text-sm font-medium flex-1 cursor-pointer">
+                <Mail className="h-4 w-4 inline mr-1.5 text-blue-600" />
+                Kirim email notifikasi ke orang tua
+              </label>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenGenerate(false)}>Batal</Button>
@@ -324,6 +364,26 @@ export default function PembayaranPage() {
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Hapus tagihan ini?</AlertDialogTitle><AlertDialogDescription>Data tidak dapat dikembalikan.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={async () => { await remove(deleteId); setDeleteId(null) }} className="bg-destructive hover:bg-destructive/90">Hapus</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={openReminderConfirm} onOpenChange={setOpenReminderConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2"><MailWarning className="h-5 w-5 text-amber-600" /> Kirim Reminder Tunggakan Massal</AlertDialogTitle>
+            <AlertDialogDescription>
+              Sistem akan mengirim email reminder ke semua orang tua siswa yang memiliki tunggakan SPP. Total <strong>{data.filter(p => p.status !== 'Lunas').length} tagihan</strong> belum lunas.
+              <br /><br />
+              Maksimal 50 email akan dikirim sekaligus. Lanjutkan?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sendingEmail}>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSendBulkReminder} disabled={sendingEmail} className="bg-amber-600 hover:bg-amber-700">
+              {sendingEmail && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              <Send className="h-4 w-4 mr-2" /> Kirim Reminder
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
