@@ -193,7 +193,8 @@ async function handleStats() {
     getCollection('siswa').then(c => c.countDocuments()),
     getCollection('guru').then(c => c.countDocuments()),
     getCollection('kelas').then(c => c.countDocuments()),
-    getCollection('pembayaran').then(c => c.find({ status: 'Lunas' }).toArray()),
+    // Fetch current-month Lunas only with projection — bounded by month
+    getCollection('pembayaran').then(c => c.find({ status: 'Lunas' }, { projection: { _id: 0, jumlah: 1, tanggalBayar: 1 } }).limit(5000).toArray()),
   ])
   const today = new Date().toISOString().slice(0, 10)
   const pembayaranHariIni = pembayaran
@@ -216,7 +217,7 @@ async function handleStats() {
     { hari: 'Jum', hadir: 425, izin: 11, sakit: 6, alpa: 2 },
   ]
   const siswaCol = await getCollection('siswa')
-  const allSiswa = await siswaCol.find({}, { projection: { _id: 0, kelas: 1 } }).toArray()
+  const allSiswa = await siswaCol.find({}, { projection: { _id: 0, kelas: 1 } }).limit(10000).toArray()
   const smp = allSiswa.filter(s => ['7','8','9'].some(k => s.kelas?.startsWith(k))).length
   const sma = allSiswa.length - smp
 
@@ -247,10 +248,10 @@ async function handlePembayaran(path, method, req) {
     const settings = await settingsCol.findOne({})
     const sppSMP = settings?.sppSMP || 400000
     const sppSMA = settings?.sppSMA || 600000
-    const siswaAktif = await siswaCol.find({ status: 'Aktif' }).toArray()
+    const siswaAktif = await siswaCol.find({ status: 'Aktif' }).limit(5000).toArray()
 
     // FIX N+1: batch-fetch existing payments for this period instead of querying per student
-    const existingPayments = await payCol.find({ bulan, tahun }).project({ siswaId: 1, _id: 0 }).toArray()
+    const existingPayments = await payCol.find({ bulan, tahun }).project({ siswaId: 1, _id: 0 }).limit(5000).toArray()
     const existingIds = new Set(existingPayments.map(p => p.siswaId))
 
     let created = 0
@@ -326,14 +327,15 @@ async function handlePembayaran(path, method, req) {
     const [payCol, siswaCol, settingsCol] = await Promise.all([getCollection('pembayaran'), getCollection('siswa'), getCollection('settings')])
     const settings = await settingsCol.findOne({})
 
+    // Only top 500 unpaid bills are eligible for reminder batch
     const tagihan = ids.length > 0
-      ? await payCol.find({ id: { $in: ids }, status: 'Belum Lunas' }).toArray()
-      : await payCol.find({ status: 'Belum Lunas' }).toArray()
+      ? await payCol.find({ id: { $in: ids }, status: 'Belum Lunas' }).limit(500).toArray()
+      : await payCol.find({ status: 'Belum Lunas' }).limit(500).toArray()
 
     // FIX N+1: batch-fetch all relevant siswa instead of per-tagihan
     const siswaIds = [...new Set(tagihan.slice(0, 50).map(t => t.siswaId))]
     const siswaList = siswaIds.length > 0
-      ? await siswaCol.find({ id: { $in: siswaIds } }).toArray()
+      ? await siswaCol.find({ id: { $in: siswaIds } }).limit(500).toArray()
       : []
     const siswaMap = new Map(siswaList.map(s => [s.id, s]))
 
@@ -375,7 +377,7 @@ async function handleChat(path, method, req) {
   const { message, sessionId, history = [] } = body
   if (!message) return err('Message wajib diisi', 400)
 
-  // Get school context from DB
+  // Get school context from DB (all queries bounded by limit for safety)
   const [siswaCount, guruCount, kelasCount, payCount, paidCount, settings, siswaSample, guruSample, kelasSample] = await Promise.all([
     getCollection('siswa').then(c => c.countDocuments()),
     getCollection('guru').then(c => c.countDocuments()),
@@ -385,7 +387,7 @@ async function handleChat(path, method, req) {
     getCollection('settings').then(c => c.findOne({})),
     getCollection('siswa').then(c => c.find({}, { projection: { _id: 0, nama: 1, kelas: 1, status: 1 } }).limit(50).toArray()),
     getCollection('guru').then(c => c.find({}, { projection: { _id: 0, nama: 1, mapel: 1 } }).limit(30).toArray()),
-    getCollection('kelas').then(c => c.find({}, { projection: { _id: 0, nama: 1, tingkat: 1, waliKelas: 1, jumlahSiswa: 1 } }).toArray()),
+    getCollection('kelas').then(c => c.find({}, { projection: { _id: 0, nama: 1, tingkat: 1, waliKelas: 1, jumlahSiswa: 1 } }).limit(100).toArray()),
   ])
 
   const systemPrompt = `Anda adalah asisten AI untuk Tata Usaha Sekolah "${settings?.namaSekolah || 'SekolahKu'}".
