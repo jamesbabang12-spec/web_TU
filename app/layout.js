@@ -7,7 +7,6 @@ export const metadata = {
   title: 'SekolahKu — Tata Usaha',
   description: 'Sistem Manajemen Tata Usaha Sekolah Modern',
   manifest: '/manifest.json',
-  themeColor: '#0f172a',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'SekolahKu' },
 }
 

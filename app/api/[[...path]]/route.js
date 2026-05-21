@@ -10,15 +10,73 @@ const err = (msg, status = 400) => NextResponse.json({ error: msg }, { status })
 
 async function readBody(req) { try { return await req.json() } catch { return {} } }
 
+// --- Simple in-memory rate limiter (per-IP, per-minute) ---
+const rateLimits = new Map()
+const RATE_LIMIT_WINDOW_MS = 60_000
+function checkRateLimit(key, max) {
+  const now = Date.now()
+  const bucket = rateLimits.get(key) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS }
+  if (now > bucket.resetAt) { bucket.count = 0; bucket.resetAt = now + RATE_LIMIT_WINDOW_MS }
+  bucket.count++
+  rateLimits.set(key, bucket)
+  return bucket.count <= max
+}
+function getClientIp(req) {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
+}
+
+// --- Sanitize MongoDB query operators from user input to prevent NoSQL injection ---
+function sanitizeBody(body) {
+  if (!body || typeof body !== 'object') return body
+  const out = {}
+  for (const [k, v] of Object.entries(body)) {
+    if (k.startsWith('$') || k.includes('.')) continue  // skip operators & nested paths
+    if (k === '_id' || k === 'password' || k === 'id') continue  // protect critical fields
+    out[k] = v
+  }
+  return out
+}
+
+// --- Per-route role permissions ---
+// Format: { method: [allowedRoles] } - GET typically open to all authenticated, mutations restricted
+const ROUTE_PERMISSIONS = {
+  siswa:        { GET: ['admin', 'tu', 'wali_kelas'], POST: ['admin', 'tu'], PUT: ['admin', 'tu'], DELETE: ['admin'] },
+  guru:         { GET: ['admin', 'tu'], POST: ['admin'], PUT: ['admin'], DELETE: ['admin'] },
+  kelas:        { GET: ['admin', 'tu', 'wali_kelas'], POST: ['admin', 'tu'], PUT: ['admin', 'tu'], DELETE: ['admin'] },
+  pembayaran:   { GET: ['admin', 'tu'], POST: ['admin', 'tu'], PUT: ['admin', 'tu'], DELETE: ['admin'] },
+  absensi:      { GET: ['admin', 'tu', 'wali_kelas'], POST: ['admin', 'tu', 'wali_kelas'], PUT: ['admin', 'tu', 'wali_kelas'], DELETE: ['admin'] },
+  'surat-masuk':{ GET: ['admin', 'tu'], POST: ['admin', 'tu'], PUT: ['admin', 'tu'], DELETE: ['admin'] },
+  'surat-keluar':{ GET: ['admin', 'tu'], POST: ['admin', 'tu'], PUT: ['admin', 'tu'], DELETE: ['admin'] },
+  settings:     { GET: ['admin', 'tu', 'wali_kelas'], PUT: ['admin'] },
+  users:        { GET: ['admin'], POST: ['admin'], PUT: ['admin'], DELETE: ['admin'] },
+  stats:        { GET: ['admin', 'tu', 'wali_kelas'] },
+  notifikasi:   { GET: ['admin', 'tu', 'wali_kelas'] },
+}
+
+function checkPermission(user, route, method) {
+  const perms = ROUTE_PERMISSIONS[route]
+  if (!perms) return true  // route not in map, allow (e.g., chat)
+  const allowed = perms[method]
+  if (!allowed) return false
+  return allowed.includes(user.role)
+}
+
 async function handleAuth(path, method, req) {
   if (path[1] === 'login' && method === 'POST') {
+    // Rate limit: max 5 login attempts per minute per IP
+    const ip = getClientIp(req)
+    if (!checkRateLimit(`login:${ip}`, 5)) {
+      return err('Terlalu banyak percobaan login. Coba lagi dalam 1 menit.', 429)
+    }
     const { email, password } = await readBody(req)
     if (!email || !password) return err('Email dan password wajib', 400)
+    if (typeof email !== 'string' || typeof password !== 'string') return err('Input tidak valid', 400)
     const users = await getCollection('users')
     const user = await users.findOne({ email })
-    if (!user) return err('Email tidak ditemukan', 401)
+    // Generic error to avoid user enumeration
+    if (!user) return err('Email atau password salah', 401)
     const ok = await comparePassword(password, user.password)
-    if (!ok) return err('Password salah', 401)
+    if (!ok) return err('Email atau password salah', 401)
     const safeUser = { id: user.id, email: user.email, name: user.name, role: user.role, kelas: user.kelas || null }
     const token = signToken(safeUser)
     return json({ token, user: safeUser })
@@ -45,18 +103,17 @@ async function crud(collectionName, path, method, req, opts = {}) {
     return json(item)
   }
   if (method === 'POST') {
-    const body = await readBody(req)
+    const body = sanitizeBody(await readBody(req))
     const item = { id: uuidv4(), ...body, createdAt: new Date() }
     if (opts.beforeInsert) await opts.beforeInsert(item, body)
     await col.insertOne(item)
-    const { _id, ...clean } = item
+    const { _id, password, ...clean } = item
     return json(clean)
   }
   if (method === 'PUT' && id) {
-    const body = await readBody(req)
-    delete body._id; delete body.id
+    const body = sanitizeBody(await readBody(req))
     await col.updateOne({ id }, { $set: { ...body, updatedAt: new Date() } })
-    const item = await col.findOne({ id }, { projection: { _id: 0 } })
+    const item = await col.findOne({ id }, { projection: { _id: 0, password: 0 } })
     return json(item)
   }
   if (method === 'DELETE' && id) {
@@ -154,9 +211,10 @@ async function handlePembayaran(path, method, req) {
     // Send emails in background (don't block response too long)
     if (shouldSendEmail && newTagihan.length > 0) {
       const tasks = newTagihan.slice(0, 50).map(async (t) => {
-        if (!t.email) return
+        const target = t.emailOrtu || t.email
+        if (!target) return
         const { subject, html, text } = emailTagihanBaru({ namaSiswa: t.namaSiswa, kelas: t.kelas, bulan, tahun, jumlah: t.jumlah, namaSekolah: settings?.namaSekolah })
-        const r = await sendEmail({ to: t.email, subject, html, text })
+        const r = await sendEmail({ to: target, subject, html, text })
         if (r.ok) emailSent++
       })
       await Promise.all(tasks)
@@ -203,9 +261,10 @@ async function handlePembayaran(path, method, req) {
     let sent = 0, failed = 0
     for (const t of tagihan.slice(0, 50)) {
       const siswa = await siswaCol.findOne({ id: t.siswaId })
-      if (!siswa?.email) { failed++; continue }
+      const target = siswa?.emailOrtu || siswa?.email
+      if (!target) { failed++; continue }
       const { subject, html, text } = emailReminderTunggakan({ namaSiswa: t.namaSiswa, kelas: t.kelas, bulan: t.bulan, tahun: t.tahun, jumlah: t.jumlah, namaSekolah: settings?.namaSekolah })
-      const r = await sendEmail({ to: siswa.email, subject, html, text })
+      const r = await sendEmail({ to: target, subject, html, text })
       if (r.ok) sent++; else failed++
     }
     return json({ ok: true, sent, failed, total: tagihan.length, message: `${sent} reminder terkirim, ${failed} gagal` })
@@ -218,13 +277,14 @@ async function handlePembayaran(path, method, req) {
     const item = await payCol.findOne({ id: path[1] })
     if (!item) return err('Tagihan tidak ditemukan', 404)
     const siswa = await siswaCol.findOne({ id: item.siswaId })
-    if (!siswa?.email) return err('Email siswa tidak tersedia', 400)
+    const target = siswa?.emailOrtu || siswa?.email
+    if (!target) return err('Email orang tua / siswa tidak tersedia', 400)
     const settings = await settingsCol.findOne({})
     const tpl = item.status === 'Lunas'
       ? emailPembayaranLunas({ ...item, idTransaksi: item.id, namaSekolah: settings?.namaSekolah })
       : emailReminderTunggakan({ ...item, namaSekolah: settings?.namaSekolah })
-    const r = await sendEmail({ to: siswa.email, ...tpl })
-    return json({ ok: r.ok, error: r.error, to: siswa.email })
+    const r = await sendEmail({ to: target, ...tpl })
+    return json({ ok: r.ok, error: r.error, to: target })
   }
 
   return crud('pembayaran', path, method, req)
@@ -308,11 +368,24 @@ async function handle(request, params) {
 
   // Public routes
   if (route === 'auth') return handleAuth(path, method, request)
-  if (route === 'chat') return handleChat(path, method, request)
+
+  // Chat endpoint - rate-limited per IP (still public per requirement, but throttled)
+  if (route === 'chat') {
+    const ip = getClientIp(request)
+    if (!checkRateLimit(`chat:${ip}`, 20)) {
+      return err('Terlalu banyak request chat. Coba lagi nanti.', 429)
+    }
+    return handleChat(path, method, request)
+  }
 
   // Protected routes
   const user = getAuthFromRequest(request)
   if (!user) return err('Unauthorized', 401)
+
+  // Per-route role check
+  if (!checkPermission(user, route, method)) {
+    return err('Akses ditolak. Anda tidak memiliki izin untuk aksi ini.', 403)
+  }
 
   if (route === 'stats') return handleStats()
   if (route === 'siswa') return crud('siswa', path, method, request)
@@ -336,8 +409,7 @@ async function handle(request, params) {
       return json(s || {})
     }
     if (method === 'PUT') {
-      const body = await readBody(request)
-      delete body._id
+      const body = sanitizeBody(await readBody(request))
       const existing = await col.findOne({})
       if (existing) await col.updateOne({ id: existing.id }, { $set: { ...body, updatedAt: new Date() } })
       else await col.insertOne({ id: uuidv4(), ...body, createdAt: new Date() })
@@ -346,6 +418,7 @@ async function handle(request, params) {
     }
   }
   if (route === 'users') {
+    // Extra guard - already in ROUTE_PERMISSIONS but defense-in-depth
     if (!requireRole(user, [ROLES.ADMIN])) return err('Forbidden', 403)
     return crud('users', path, method, request)
   }

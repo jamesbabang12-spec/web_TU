@@ -29,6 +29,9 @@ const siswaSchema = z.object({
   alamat: z.string().min(3, 'Alamat wajib diisi'),
   telepon: z.string().min(8, 'Telepon minimal 8 digit'),
   email: z.string().email('Email tidak valid'),
+  namaOrtu: z.string().optional().or(z.literal('')),
+  emailOrtu: z.string().email('Email orang tua tidak valid').optional().or(z.literal('')),
+  teleponOrtu: z.string().optional().or(z.literal('')),
   status: z.string().optional(),
 })
 
@@ -50,13 +53,13 @@ export default function SiswaPage() {
 
   const openCreate = () => {
     setEditing(null)
-    reset({ nis: '', nama: '', kelas: '', jenisKelamin: '', alamat: '', telepon: '', email: '', status: 'Aktif' })
+    reset({ nis: '', nama: '', kelas: '', jenisKelamin: '', alamat: '', telepon: '', email: '', namaOrtu: '', emailOrtu: '', teleponOrtu: '', status: 'Aktif' })
     setOpen(true)
   }
 
   const openEdit = (s) => {
     setEditing(s)
-    reset({ nis: s.nis, nama: s.nama, kelas: s.kelas, jenisKelamin: s.jenisKelamin, alamat: s.alamat || '', telepon: s.telepon, email: s.email, status: s.status || 'Aktif' })
+    reset({ nis: s.nis, nama: s.nama, kelas: s.kelas, jenisKelamin: s.jenisKelamin, alamat: s.alamat || '', telepon: s.telepon, email: s.email, namaOrtu: s.namaOrtu || '', emailOrtu: s.emailOrtu || '', teleponOrtu: s.teleponOrtu || '', status: s.status || 'Aktif' })
     setOpen(true)
   }
 
@@ -223,6 +226,18 @@ export default function SiswaPage() {
             <div className="space-y-1.5"><Label>Telepon</Label><Input {...register('telepon')} placeholder="08xxxxxxxxxx" />{errors.telepon && <p className="text-xs text-destructive">{errors.telepon.message}</p>}</div>
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" {...register('email')} placeholder="nama@email.com" />{errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}</div>
             <div className="space-y-1.5 md:col-span-2"><Label>Alamat</Label><Input {...register('alamat')} placeholder="Jl. Pendidikan No. 1" />{errors.alamat && <p className="text-xs text-destructive">{errors.alamat.message}</p>}</div>
+
+            <div className="md:col-span-2 pt-2">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground font-medium">Data Orang Tua / Wali (opsional)</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            </div>
+            <div className="space-y-1.5"><Label>Nama Orang Tua / Wali</Label><Input {...register('namaOrtu')} placeholder="Bapak/Ibu ..." /></div>
+            <div className="space-y-1.5"><Label>Telepon Orang Tua</Label><Input {...register('teleponOrtu')} placeholder="08xxxxxxxxxx" /></div>
+            <div className="space-y-1.5 md:col-span-2"><Label>Email Orang Tua <span className="text-muted-foreground font-normal">(untuk notifikasi SPP)</span></Label><Input type="email" {...register('emailOrtu')} placeholder="ortu@email.com" />{errors.emailOrtu && <p className="text-xs text-destructive">{errors.emailOrtu.message}</p>}<p className="text-xs text-muted-foreground">Email notifikasi pembayaran SPP akan dikirim ke alamat ini. Jika kosong, akan dikirim ke email siswa.</p></div>
+
             <div className="space-y-1.5"><Label>Status</Label>
               <Select value={watch('status')} onValueChange={(v) => setValue('status', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
