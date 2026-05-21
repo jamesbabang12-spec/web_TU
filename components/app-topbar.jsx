@@ -33,15 +33,20 @@ export function AppTopbar() {
   const { theme, setTheme } = useTheme()
   const { user, logout } = useAuthStore()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const role = user?.role || 'admin'
+
+  // If user is null (logging out / not authenticated), don't render any user info
+  // to prevent flashing "Admin" fallback during logout transition
+  if (!user) return null
+
+  const role = user.role
   const visibleNav = NAV.filter((n) => canAccess(role, n.href))
 
   const handleLogout = () => {
     logout()
-    router.push('/')
+    router.replace('/')
   }
 
-  const initials = (user?.name || 'A').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase()
+  const initials = (user.name || 'U').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase()
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 backdrop-blur-md px-4 sm:px-6">
@@ -108,9 +113,9 @@ export function AppTopbar() {
             <Button variant="ghost" className="gap-2 px-2">
               <Avatar className="h-8 w-8"><AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">{initials}</AvatarFallback></Avatar>
               <div className="hidden sm:flex flex-col items-start leading-tight">
-                <span className="text-sm font-medium">{user?.name || 'Admin'}</span>
+                <span className="text-sm font-medium">{user.name}</span>
                 <div className="flex items-center gap-1">
-                  <Badge variant="secondary" className={cn('text-[9px] px-1.5 py-0 h-4 font-medium', ROLE_BADGE_COLOR[role])}>{ROLE_LABELS[role] || 'Administrator'}</Badge>
+                  <Badge variant="secondary" className={cn('text-[9px] px-1.5 py-0 h-4 font-medium', ROLE_BADGE_COLOR[role])}>{ROLE_LABELS[role] || '—'}</Badge>
                 </div>
               </div>
             </Button>
@@ -118,8 +123,8 @@ export function AppTopbar() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col">
-                <span className="text-sm font-medium">{user?.name}</span>
-                <span className="text-xs text-muted-foreground font-normal">{user?.email}</span>
+                <span className="text-sm font-medium">{user.name}</span>
+                <span className="text-xs text-muted-foreground font-normal">{user.email}</span>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

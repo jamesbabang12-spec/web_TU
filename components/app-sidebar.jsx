@@ -25,8 +25,11 @@ export function AppSidebar() {
   const pathname = usePathname()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { user } = useAuthStore()
-  const role = user?.role || 'admin'
 
+  // Don't render sidebar if no user (e.g., during logout transition)
+  if (!user) return null
+
+  const role = user.role
   const visibleNav = NAV.filter((item) => canAccess(role, item.href))
 
   return (
