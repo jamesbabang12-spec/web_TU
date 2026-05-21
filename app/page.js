@@ -13,19 +13,13 @@ import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/lib/store/auth-store'
 import { apiClient } from '@/lib/api/client'
 import { toast } from 'sonner'
-import { GraduationCap, Eye, EyeOff, Loader2, BookOpen, Users, ClipboardCheck, Wallet, ShieldCheck } from 'lucide-react'
+import { GraduationCap, Eye, EyeOff, Loader2, BookOpen, Users, ClipboardCheck, Wallet } from 'lucide-react'
 
 const loginSchema = z.object({
   email: z.string().email('Email tidak valid'),
   password: z.string().min(4, 'Password minimal 4 karakter'),
   remember: z.boolean().optional(),
 })
-
-const DEMO_ACCOUNTS = [
-  { label: 'Admin', email: 'admin@sekolahku.id', password: 'admin123', color: 'bg-blue-500' },
-  { label: 'Tata Usaha', email: 'tu@sekolahku.id', password: 'tu123', color: 'bg-violet-500' },
-  { label: 'Wali Kelas', email: 'wali@sekolahku.id', password: 'wali123', color: 'bg-emerald-500' },
-]
 
 function App() {
   const router = useRouter()
@@ -35,7 +29,7 @@ function App() {
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: 'admin@sekolahku.id', password: 'admin123', remember: true },
+    defaultValues: { email: '', password: '', remember: false },
   })
 
   const onSubmit = async (data) => {
@@ -51,11 +45,6 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const fillDemo = (acc) => {
-    setValue('email', acc.email)
-    setValue('password', acc.password)
   }
 
   return (
@@ -105,22 +94,6 @@ function App() {
               {loading ? 'Memproses...' : 'Masuk'}
             </Button>
           </form>
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="h-px flex-1 bg-border" />
-              <span className="text-xs text-muted-foreground">Akun Demo</span>
-              <div className="h-px flex-1 bg-border" />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {DEMO_ACCOUNTS.map((acc) => (
-                <button key={acc.email} type="button" onClick={() => fillDemo(acc)} className="group flex flex-col items-center gap-1.5 rounded-lg border p-2.5 hover:border-primary hover:bg-muted/50 transition-all">
-                  <div className={`h-7 w-7 rounded-md ${acc.color} flex items-center justify-center`}><ShieldCheck className="h-3.5 w-3.5 text-white" /></div>
-                  <span className="text-xs font-medium">{acc.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
