@@ -7,9 +7,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Users, UserCog, School, Wallet, TrendingUp, TrendingDown, ArrowUpRight, CalendarCheck, AlertCircle } from 'lucide-react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis, Pie, PieChart, Cell } from 'recharts'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { apiClient } from '@/lib/api/client'
-import { NOTIFIKASI, PEMBAYARAN_DATA, SISWA_DATA } from '@/lib/mock-data'
+import { NOTIFIKASI } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 
 const formatIDR = (v) => 'Rp ' + (v / 1000000).toFixed(1) + 'jt'
@@ -17,9 +18,19 @@ const formatIDRFull = (v) => new Intl.NumberFormat('id-ID', { style: 'currency',
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null)
+  const [pembayaranList, setPembayaranList] = useState(null) // null=loading, []=empty, [...]=data
+  const [chartType, setChartType] = useState('area')
 
   useEffect(() => {
-    apiClient.get('/stats').then((r) => setStats(r.data)).catch(() => {})
+    // Fetch parallel — tidak waterfall
+    apiClient.get('/stats').then((r) => setStats(r.data)).catch(() => setStats({}))
+    apiClient.get('/pembayaran').then((r) => {
+      const list = (r.data || [])
+        .filter(p => p.status === 'Lunas')
+        .sort((a, b) => new Date(b.tanggalBayar || b.createdAt || 0) - new Date(a.tanggalBayar || a.createdAt || 0))
+        .slice(0, 5)
+      setPembayaranList(list)
+    }).catch(() => setPembayaranList([]))
   }, [])
 
   const statCards = stats
@@ -71,7 +82,7 @@ export default function DashboardPage() {
               <CardTitle>Grafik Keuangan</CardTitle>
               <CardDescription>Pemasukan vs Pengeluaran 6 bulan terakhir</CardDescription>
             </div>
-            <Tabs defaultValue="area" className="w-fit">
+            <Tabs value={chartType} onValueChange={setChartType} className="w-fit">
               <TabsList className="h-8">
                 <TabsTrigger value="area" className="text-xs h-6">Area</TabsTrigger>
                 <TabsTrigger value="bar" className="text-xs h-6">Bar</TabsTrigger>
@@ -79,27 +90,39 @@ export default function DashboardPage() {
             </Tabs>
           </CardHeader>
           <CardContent>
-            {stats ? (
+            {stats?.pemasukanChart ? (
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={stats.pemasukanChart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
-                  <XAxis dataKey="bulan" className="text-xs" tickLine={false} axisLine={false} />
-                  <YAxis className="text-xs" tickLine={false} axisLine={false} tickFormatter={(v) => formatIDR(v)} />
-                  <Tooltip formatter={(v) => formatIDRFull(v)} contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area type="monotone" dataKey="pemasukan" stroke="hsl(var(--chart-2))" strokeWidth={2} fill="url(#gIn)" />
-                  <Area type="monotone" dataKey="pengeluaran" stroke="hsl(var(--chart-1))" strokeWidth={2} fill="url(#gOut)" />
-                </AreaChart>
+                {chartType === 'area' ? (
+                  <AreaChart data={stats.pemasukanChart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                    <XAxis dataKey="bulan" className="text-xs" tickLine={false} axisLine={false} />
+                    <YAxis className="text-xs" tickLine={false} axisLine={false} tickFormatter={(v) => formatIDR(v)} />
+                    <Tooltip formatter={(v) => formatIDRFull(v)} contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Area type="monotone" dataKey="pemasukan" stroke="hsl(var(--chart-2))" strokeWidth={2} fill="url(#gIn)" />
+                    <Area type="monotone" dataKey="pengeluaran" stroke="hsl(var(--chart-1))" strokeWidth={2} fill="url(#gOut)" />
+                  </AreaChart>
+                ) : (
+                  <BarChart data={stats.pemasukanChart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                    <XAxis dataKey="bulan" className="text-xs" tickLine={false} axisLine={false} />
+                    <YAxis className="text-xs" tickLine={false} axisLine={false} tickFormatter={(v) => formatIDR(v)} />
+                    <Tooltip formatter={(v) => formatIDRFull(v)} contentStyle={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="pemasukan" fill="hsl(var(--chart-2))" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="pengeluaran" fill="hsl(var(--chart-1))" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             ) : <Skeleton className="h-[300px] w-full" />}
           </CardContent>
@@ -111,7 +134,7 @@ export default function DashboardPage() {
             <CardDescription>Berdasarkan jenjang</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center">
-            {stats ? (
+            {stats?.kelasDistribusi ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie data={stats.kelasDistribusi} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4}>
@@ -185,27 +208,36 @@ export default function DashboardPage() {
             <CardTitle>Pembayaran SPP Terbaru</CardTitle>
             <CardDescription>5 transaksi terbaru</CardDescription>
           </div>
-          <button className="text-sm text-primary inline-flex items-center gap-1 hover:underline">Lihat semua <ArrowUpRight className="h-3.5 w-3.5" /></button>
+          <Link href="/pembayaran" className="text-sm text-primary inline-flex items-center gap-1 hover:underline">Lihat semua <ArrowUpRight className="h-3.5 w-3.5" /></Link>
         </CardHeader>
         <CardContent>
-          <div className="space-y-1">
-            {PEMBAYARAN_DATA.filter(p => p.status === 'Lunas').slice(0, 5).map((p) => {
-              const initials = p.namaSiswa.split(' ').map(x => x[0]).slice(0,2).join('')
-              return (
-                <div key={p.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted/50">
-                  <Avatar className="h-9 w-9"><AvatarFallback className="text-xs bg-primary/10 text-primary">{initials}</AvatarFallback></Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{p.namaSiswa}</p>
-                    <p className="text-xs text-muted-foreground">SPP {p.bulan} • {p.kelas}</p>
+          {pembayaranList === null ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : pembayaranList.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">Belum ada pembayaran lunas</div>
+          ) : (
+            <div className="space-y-1">
+              {pembayaranList.map((p) => {
+                const nama = p.namaSiswa || 'Siswa'
+                const initials = nama.split(' ').map(x => x[0]).slice(0, 2).join('') || 'S'
+                return (
+                  <div key={p.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted/50">
+                    <Avatar className="h-9 w-9"><AvatarFallback className="text-xs bg-primary/10 text-primary">{initials}</AvatarFallback></Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{nama}</p>
+                      <p className="text-xs text-muted-foreground">SPP {p.bulan} • {p.kelas || '-'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{formatIDRFull(p.jumlah || 0)}</p>
+                      <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-[10px] dark:bg-emerald-950 dark:text-emerald-400">{p.status}</Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold">{formatIDRFull(p.jumlah)}</p>
-                    <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-[10px] dark:bg-emerald-950 dark:text-emerald-400">{p.status}</Badge>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
