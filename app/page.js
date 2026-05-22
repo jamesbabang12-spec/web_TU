@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/lib/store/auth-store'
 import { apiClient } from '@/lib/api/client'
 import { toast } from 'sonner'
-import { GraduationCap, Eye, EyeOff, Loader2, BookOpen, Users, ClipboardCheck, Wallet } from 'lucide-react'
+import { GraduationCap, Eye, EyeOff, Loader2, BookOpen, Users, ClipboardCheck, Wallet, Award, Trophy, Sparkles, Briefcase, Heart, Star } from 'lucide-react'
 
 const loginSchema = z.object({
   email: z.string().email('Email tidak valid'),
@@ -21,11 +21,23 @@ const loginSchema = z.object({
   remember: z.boolean().optional(),
 })
 
+const ICON_MAP = {
+  Users, BookOpen, ClipboardCheck, Wallet, Award, Trophy, Sparkles, Briefcase, Heart, Star, GraduationCap,
+}
+
 function App() {
   const router = useRouter()
   const login = useAuthStore((s) => s.login)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [branding, setBranding] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/settings/public')
+      .then(r => r.json())
+      .then(data => setBranding(data))
+      .catch(() => setBranding({}))
+  }, [])
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm({
     resolver: zodResolver(loginSchema),
@@ -47,17 +59,27 @@ function App() {
     }
   }
 
+  const namaSekolah = branding?.namaSekolah || 'SekolahKu'
+  const tagline = branding?.taglineApp || 'Tata Usaha Digital'
+  const heroTitle = branding?.heroTitle || 'Kelola Administrasi Sekolah dengan Mudah & Efisien'
+  const heroSubtitle = branding?.heroSubtitle || 'Platform terintegrasi untuk siswa, guru, pembayaran SPP, absensi, dan administrasi sekolah modern.'
+  const heroStats = branding?.heroStats || []
+
   return (
     <div className="min-h-screen w-full flex bg-background">
       <div className="flex w-full lg:w-1/2 items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-md space-y-7">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-              <GraduationCap className="h-6 w-6" />
-            </div>
+            {branding?.logoUrl ? (
+              <img src={branding.logoUrl} alt={namaSekolah} className="h-11 w-11 rounded-xl object-cover shadow-lg" />
+            ) : (
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
+                <GraduationCap className="h-6 w-6" />
+              </div>
+            )}
             <div>
-              <h1 className="text-xl font-bold tracking-tight">SekolahKu</h1>
-              <p className="text-xs text-muted-foreground">Tata Usaha Digital</p>
+              <h1 className="text-xl font-bold tracking-tight">{namaSekolah}</h1>
+              <p className="text-xs text-muted-foreground">{tagline}</p>
             </div>
           </div>
 
@@ -104,21 +126,19 @@ function App() {
 
         <div className="relative z-10 flex flex-col justify-center p-12 text-white w-full">
           <div className="max-w-lg space-y-8">
-            <h2 className="text-4xl font-bold leading-tight">Kelola Administrasi Sekolah dengan Mudah & Efisien</h2>
-            <p className="text-lg text-blue-100">Platform terintegrasi untuk siswa, guru, pembayaran SPP, absensi, dan administrasi sekolah modern.</p>
+            <h2 className="text-4xl font-bold leading-tight">{heroTitle}</h2>
+            <p className="text-lg text-blue-100">{heroSubtitle}</p>
             <div className="grid grid-cols-2 gap-4">
-              {[
-                { icon: Users, label: 'Manajemen Siswa', value: '444+' },
-                { icon: BookOpen, label: 'Mata Pelajaran', value: '24' },
-                { icon: ClipboardCheck, label: 'Kehadiran Hari Ini', value: '97%' },
-                { icon: Wallet, label: 'SPP Lunas', value: '89%' },
-              ].map((f, i) => (
-                <Card key={i} className="bg-white/10 backdrop-blur-md border-white/20 p-4 text-white">
-                  <f.icon className="h-6 w-6 mb-2 text-white/90" />
-                  <div className="text-2xl font-bold">{f.value}</div>
-                  <div className="text-xs text-blue-100">{f.label}</div>
-                </Card>
-              ))}
+              {heroStats.map((f, i) => {
+                const Icon = ICON_MAP[f.icon] || Users
+                return (
+                  <Card key={i} className="bg-white/10 backdrop-blur-md border-white/20 p-4 text-white">
+                    <Icon className="h-6 w-6 mb-2 text-white/90" />
+                    <div className="text-2xl font-bold">{f.value}</div>
+                    <div className="text-xs text-blue-100">{f.label}</div>
+                  </Card>
+                )
+              })}
             </div>
           </div>
         </div>
