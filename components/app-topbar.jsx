@@ -46,6 +46,13 @@ export function AppTopbar() {
   const namaSekolah = branding?.namaSekolah || 'SekolahKu'
   const tagline = branding?.taglineApp || 'Tata Usaha'
   const logoUrl = branding?.logoUrl
+  // Dynamic font-size based on name length
+  const nameLen = namaSekolah.length
+  const nameSizeClass =
+    nameLen <= 14 ? 'text-sm' :
+    nameLen <= 22 ? 'text-[13px]' :
+    nameLen <= 30 ? 'text-xs' :
+    'text-[11px]'
 
   const handleLogout = () => {
     logout()
@@ -61,15 +68,15 @@ export function AppTopbar() {
           <Button variant="ghost" size="icon" className="lg:hidden"><Menu className="h-5 w-5" /></Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-64 p-0">
-          <div className="flex items-center gap-3 h-16 border-b px-4">
+          <div className="flex items-center gap-3 min-h-16 py-3 border-b px-4">
             {logoUrl ? (
-              <img src={logoUrl} alt={namaSekolah} className="h-9 w-9 rounded-lg object-cover" />
+              <img src={logoUrl} alt={namaSekolah} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
             ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GraduationCap className="h-5 w-5" /></div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GraduationCap className="h-5 w-5" /></div>
             )}
-            <div className="flex flex-col min-w-0">
-              <span className="text-sm font-bold truncate">{namaSekolah}</span>
-              <span className="text-xs text-muted-foreground truncate">{tagline}</span>
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className={cn('font-bold leading-tight line-clamp-2 break-words', nameSizeClass)} title={namaSekolah}>{namaSekolah}</span>
+              <span className="text-[11px] text-muted-foreground truncate mt-0.5">{tagline}</span>
             </div>
           </div>
           <nav className="p-3 space-y-1">

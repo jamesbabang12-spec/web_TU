@@ -37,6 +37,13 @@ export function AppSidebar() {
   const namaSekolah = branding?.namaSekolah || 'SekolahKu'
   const tagline = branding?.taglineApp || 'Tata Usaha'
   const logoUrl = branding?.logoUrl
+  // Dynamic font size based on name length (avoid truncation)
+  const nameLen = namaSekolah.length
+  const nameSizeClass =
+    nameLen <= 14 ? 'text-sm' :
+    nameLen <= 22 ? 'text-[13px]' :
+    nameLen <= 30 ? 'text-xs' :
+    'text-[11px]'
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -46,7 +53,7 @@ export function AppSidebar() {
           sidebarCollapsed ? 'w-[72px]' : 'w-64'
         )}
       >
-        <div className={cn('flex items-center gap-3 h-16 border-b border-sidebar-border px-4', sidebarCollapsed && 'justify-center px-2')}>
+        <div className={cn('flex items-center gap-3 min-h-16 py-3 border-b border-sidebar-border px-4', sidebarCollapsed && 'justify-center px-2')}>
           {logoUrl ? (
             <img src={logoUrl} alt={namaSekolah} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
           ) : (
@@ -55,9 +62,9 @@ export function AppSidebar() {
             </div>
           )}
           {!sidebarCollapsed && (
-            <div className="flex flex-col min-w-0">
-              <span className="text-sm font-bold leading-tight truncate">{namaSekolah}</span>
-              <span className="text-xs text-muted-foreground truncate">{tagline}</span>
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className={cn('font-bold leading-tight line-clamp-2 break-words', nameSizeClass)} title={namaSekolah}>{namaSekolah}</span>
+              <span className="text-[11px] text-muted-foreground truncate mt-0.5">{tagline}</span>
             </div>
           )}
         </div>

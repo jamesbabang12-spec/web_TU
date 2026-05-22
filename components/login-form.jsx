@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/lib/store/auth-store'
 import { apiClient } from '@/lib/api/client'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { GraduationCap, Eye, EyeOff, Loader2, BookOpen, Users, ClipboardCheck, Wallet, Award, Trophy, Sparkles, Briefcase, Heart, Star } from 'lucide-react'
 
@@ -57,22 +58,29 @@ export default function LoginForm({ branding }) {
   const heroTitle = branding?.heroTitle || 'Kelola Administrasi Sekolah dengan Mudah & Efisien'
   const heroSubtitle = branding?.heroSubtitle || 'Platform terintegrasi untuk siswa, guru, pembayaran SPP, absensi, dan administrasi sekolah modern.'
   const heroStats = Array.isArray(branding?.heroStats) ? branding.heroStats : []
+  // Dynamic font-size based on name length
+  const nameLen = namaSekolah.length
+  const nameSizeClass =
+    nameLen <= 14 ? 'text-xl' :
+    nameLen <= 22 ? 'text-lg' :
+    nameLen <= 30 ? 'text-base' :
+    'text-sm'
 
   return (
     <div className="min-h-screen w-full flex bg-background">
       <div className="flex w-full lg:w-1/2 items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-md space-y-7">
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-3">
             {branding?.logoUrl ? (
-              <img src={branding.logoUrl} alt={namaSekolah} className="h-11 w-11 rounded-xl object-cover shadow-lg" />
+              <img src={branding.logoUrl} alt={namaSekolah} className="h-11 w-11 shrink-0 rounded-xl object-cover shadow-lg" />
             ) : (
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
                 <GraduationCap className="h-6 w-6" />
               </div>
             )}
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">{namaSekolah}</h1>
-              <p className="text-xs text-muted-foreground">{tagline}</p>
+            <div className="min-w-0 flex-1">
+              <h1 className={cn('font-bold tracking-tight leading-tight line-clamp-2', nameSizeClass)} title={namaSekolah}>{namaSekolah}</h1>
+              <p className="text-xs text-muted-foreground truncate mt-0.5">{tagline}</p>
             </div>
           </div>
 
