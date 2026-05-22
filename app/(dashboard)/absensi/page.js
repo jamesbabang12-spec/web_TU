@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Calendar } from '@/components/ui/calendar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { ABSENSI_DATA, KELAS_LIST } from '@/lib/mock-data'
+import { KELAS_LIST } from '@/lib/mock-data'
 import { apiClient } from '@/lib/api/client'
 import { CalendarCheck, Save, ScanLine, ListChecks, CheckCircle2, XCircle, Volume2, VolumeX, Trash2, UserCheck, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -49,6 +49,9 @@ export default function AbsensiPage() {
   const [soundOn, setSoundOn] = useState(true)
   const [loadingSiswa, setLoadingSiswa] = useState(false)
   const [mode, setMode] = useState('manual')
+  const [existingId, setExistingId] = useState(null) // id of existing absensi for date+kelas
+  const [rekap, setRekap] = useState([])
+  const [loadingRekap, setLoadingRekap] = useState(false)
   const audioRef = useRef(null)
 
   // Load siswa per kelas
@@ -59,6 +62,55 @@ export default function AbsensiPage() {
       setSiswaKelas(list)
     }).catch(() => {}).finally(() => setLoadingSiswa(false))
   }, [kelas])
+
+  // Load existing absensi for selected date + kelas
+  useEffect(() => {
+    const tanggal = date.toISOString().slice(0, 10)
+    apiClient.get(`/absensi?tanggal=${tanggal}&kelas=${encodeURIComponent(kelas)}`)
+      .then(r => {
+        const list = r.data || []
+        if (list.length > 0) {
+          const rec = list[0]
+          setExistingId(rec.id)
+          const map = {}
+          for (const it of (rec.items || [])) {
+            if (it.siswaId) map[it.siswaId] = it.status
+          }
+          setAbsensi(map)
+          // also rebuild scanned list for items marked as Hadir via scan
+          if (rec.sumberInput === 'scan') {
+            const scannedItems = (rec.items || [])
+              .filter(it => it.status === 'Hadir')
+              .map(it => ({ nis: it.nis, nama: it.nama, kelas: rec.kelas, time: rec.updatedAt || rec.createdAt || new Date() }))
+            setScanned(scannedItems)
+          } else {
+            setScanned([])
+          }
+        } else {
+          setExistingId(null)
+          setAbsensi({})
+          setScanned([])
+        }
+      })
+      .catch(() => {
+        setExistingId(null)
+        setAbsensi({})
+        setScanned([])
+      })
+  }, [date, kelas])
+
+  // Load rekap (monthly summary)
+  const loadRekap = () => {
+    const now = new Date()
+    const bulan = date.getMonth() + 1
+    const tahun = date.getFullYear()
+    setLoadingRekap(true)
+    apiClient.get(`/absensi/rekap?bulan=${bulan}&tahun=${tahun}`)
+      .then(r => setRekap(r.data?.items || []))
+      .catch(() => setRekap([]))
+      .finally(() => setLoadingRekap(false))
+  }
+  useEffect(() => { loadRekap() }, [date.getMonth(), date.getFullYear(), kelas])
 
   const setStatus = (siswaId, status) => setAbsensi(prev => ({ ...prev, [siswaId]: status }))
 
@@ -138,8 +190,15 @@ export default function AbsensiPage() {
         totalAlpa: items.filter(i => i.status === 'Alpa').length,
         sumberInput: mode === 'barcode' ? 'scan' : 'manual',
       }
-      await apiClient.post('/absensi', payload)
+      let saved
+      if (existingId) {
+        saved = await apiClient.put(`/absensi/${existingId}`, payload)
+      } else {
+        saved = await apiClient.post('/absensi', payload)
+        if (saved?.data?.id) setExistingId(saved.data.id)
+      }
       toast.success(`✓ Absensi ${kelas} (${count} siswa) tanggal ${date.toLocaleDateString('id-ID')} tersimpan`)
+      loadRekap()
     } catch (e) {
       toast.error(`Gagal menyimpan absensi: ${e?.response?.data?.error || e?.message || 'Unknown error'}`)
     } finally {
@@ -248,7 +307,10 @@ export default function AbsensiPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Rekap Absensi Bulan Ini</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Rekap Absensi Bulan {date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</CardTitle>
+          <Badge variant="secondary" className="text-xs">{rekap.length} siswa</Badge>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -263,12 +325,16 @@ export default function AbsensiPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {ABSENSI_DATA.map((a) => {
+              {loadingRekap ? (
+                <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin inline text-primary" /></TableCell></TableRow>
+              ) : rekap.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">Belum ada data rekap untuk bulan ini. Simpan absensi terlebih dahulu.</TableCell></TableRow>
+              ) : rekap.map((a) => {
                 const total = a.hadir + a.izin + a.sakit + a.alpa
-                const pct = Math.round((a.hadir / total) * 100)
+                const pct = total > 0 ? Math.round((a.hadir / total) * 100) : 0
                 return (
                   <TableRow key={a.id}>
-                    <TableCell className="font-medium">{a.nama}</TableCell>
+                    <TableCell className="font-medium">{a.nama || a.nis}</TableCell>
                     <TableCell><Badge variant="outline">{a.kelas}</Badge></TableCell>
                     <TableCell className="text-center text-emerald-600 font-medium">{a.hadir}</TableCell>
                     <TableCell className="text-center text-blue-600">{a.izin}</TableCell>
@@ -276,7 +342,7 @@ export default function AbsensiPage() {
                     <TableCell className="text-center text-red-600">{a.alpa}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-20 rounded-full bg-muted overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} /></div>
+                        <div className="h-2 w-20 rounded-full bg-muted overflow-hidden"><div className={cn('h-full', pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-red-500')} style={{ width: `${pct}%` }} /></div>
                         <span className="text-xs font-medium w-9">{pct}%</span>
                       </div>
                     </TableCell>

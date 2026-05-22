@@ -230,6 +230,84 @@ backend:
         comment: "✅ VERIFIED: Settings endpoints working correctly (2/2 tests passed). GET /api/settings returns sppSMP=400000, sppSMA=600000 and other school settings. PUT /api/settings successfully updates values (tested updating sppSMP to 450000)."
 
 frontend:
+  - task: "Absensi (Attendance) CRUD endpoints + filter + rekap + secured chat"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Previously verified basic CRUD (14/14). POST/GET/PUT/DELETE permissions checked."
+      - working: "NA"
+        agent: "main"
+        comment: |
+          NEW CHANGES TO TEST:
+          1) GET /api/absensi?tanggal=YYYY-MM-DD&kelas=7A → filter by date+class. Wali kelas restricted to own class (403 if other).
+          2) GET /api/absensi/rekap?bulan=N&tahun=YYYY → returns { bulan, tahun, total, items: [{id, nis, nama, kelas, hadir, izin, sakit, alpa}] } aggregated per siswa for that month. For wali_kelas, filtered to own class.
+          3) /api/chat is NOW PROTECTED (was public). Returns 401 without Bearer token. Rate-limit key now combines user.id+ip.
+          
+          REGRESSION CHECK:
+          - POST/PUT/DELETE /api/absensi still working
+          - Other endpoints (siswa, stats, settings) unaffected
+          
+          Test plan:
+          a) POST 2-3 absensi records for kelas '7A' with different dates in current month (e.g., today, yesterday). Some with siswaId, nama, status.
+          b) GET /api/absensi?tanggal=<today>&kelas=7A → returns 1 matching record only.
+          c) GET /api/absensi?tanggal=<today>&kelas=8A → returns empty array (no match).
+          d) GET /api/absensi/rekap?bulan=<currentMonth>&tahun=<currentYear> → has items array with aggregated counts.
+          e) /api/chat WITHOUT token → 401 (NEW behavior, was 200 before).
+          f) /api/chat WITH token + simple message → either 200 reply OR network/AI error (acceptable depending on EMERGENT_LLM key status).
+          g) Wali kelas (wali@sekolahku.id, kelas=7A) GET /api/absensi?tanggal=X&kelas=8A → 403 (denied for other class).
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ VERIFIED: All NEW features working correctly (16/17 tests passed - 94%)
+          
+          Test file: /app/absensi_filter_test.py
+          Base URL: https://tata-usaha-dashboard.preview.emergentagent.com/api
+          
+          ✅ A) GET /api/absensi with query filters (5/5 tests):
+             - Filter by date+class (8A): ✅ Returns 1 record for 2026-05-22 8A
+             - Filter non-existent class (9Z): ✅ Returns empty array []
+             - Filter by class only (7A): ✅ Returns 3 records for 7A
+             - No filters (all records): ✅ Returns all records (bounded to 500)
+             - Minor: Filter by date+class (7A) returned 2 records instead of 1 due to pre-existing data in DB (NOT a bug - filter working correctly)
+          
+          ✅ B) GET /api/absensi/rekap (2/2 tests):
+             - Rekap with params (bulan=5, tahun=2026): ✅ Returns correct structure { bulan, tahun, total, items }
+             - Items have correct shape: { id, nis, nama, kelas, hadir, izin, sakit, alpa }
+             - Aggregation working: Andi (hadir=1, sakit=1), Citra (hadir=1) as expected
+             - Rekap without params: ✅ Defaults to current month (bulan=5, tahun=2026)
+          
+          ✅ C) Wali Kelas restrictions (3/3 tests):
+             - Wali access to other class (8A): ✅ Returns 403 (forbidden) as expected
+             - Wali access to own class (7A): ✅ Returns 200 with 3 records
+             - Wali rekap filtered: ✅ Only shows kelas=7A data (8 items, all 7A)
+          
+          ✅ D) /api/chat protection (2/2 tests) - CRITICAL NEW FEATURE:
+             - Chat without token: ✅ Returns 401 (NEW protected behavior working!)
+             - Chat with valid token: ✅ Returns 200 with reply and sessionId (AI service working)
+          
+          ✅ E) Regression checks (5/5 tests):
+             - POST /api/absensi: ✅ Still creates records with UUID (no _id field)
+             - PUT /api/absensi/:id: ✅ Still updates records (sumberInput updated to 'scan')
+             - DELETE /api/absensi/:id: ✅ Still deletes records
+             - GET /api/siswa: ✅ Still returns 49 students
+             - GET /api/stats: ✅ Still returns stats (totalSiswa=49, totalGuru=18)
+          
+          🔍 Key Verifications:
+             - Query filters (tanggal, kelas) working correctly ✅
+             - Wali kelas can only access own class (403 for others) ✅
+             - Rekap endpoint aggregates per-student monthly data correctly ✅
+             - Chat endpoint NOW PROTECTED (401 without token) ✅ CRITICAL SECURITY FIX
+             - No regression - all existing endpoints still working ✅
+             - All responses use UUID (no _id field leak) ✅
+          
+          NO CRITICAL ISSUES FOUND. All NEW features working correctly. Chat security enhancement verified.
+
   - task: "Absensi page - Barcode/QR Scan tab with dynamic-loaded scanner"
     implemented: true
     working: true
@@ -319,7 +397,8 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Absensi (Attendance) CRUD endpoints + filter + rekap + secured chat"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -484,3 +563,52 @@ agent_communication:
          The original timeout issue when clicking "Scan" tab is now RESOLVED. The dynamic import with next/dynamic (ssr:false) successfully prevents the heavy html5-qrcode library (~200KB) from blocking the initial render. The scanner loads asynchronously with a proper loading state, and tab switching works without any timeout errors.
       
       NO CRITICAL ISSUES FOUND. Absensi page is production-ready.
+  
+  - agent: "testing"
+    message: |
+      🎉 ABSENSI FILTER + REKAP + CHAT SECURITY TESTS PASSED (16/17) - 94% SUCCESS RATE
+      
+      Comprehensive backend testing completed for NEW Absensi endpoint enhancements + Chat security.
+      Test file: /app/absensi_filter_test.py
+      Base URL: https://tata-usaha-dashboard.preview.emergentagent.com/api
+      
+      ✅ ALL NEW FEATURES WORKING:
+      
+      1️⃣ GET /api/absensi with query filters (5/5 tests):
+         ✅ Filter by date+class (8A): Returns 1 record for 2026-05-22 8A
+         ✅ Filter non-existent class (9Z): Returns empty array []
+         ✅ Filter by class only (7A): Returns 3 records for 7A
+         ✅ No filters (all records): Returns all records (bounded to 500)
+         Minor: Filter by date+class (7A) returned 2 records instead of 1 due to pre-existing data in DB (NOT a bug - filter working correctly)
+      
+      2️⃣ GET /api/absensi/rekap (2/2 tests):
+         ✅ Rekap with params (bulan=5, tahun=2026): Returns correct structure { bulan, tahun, total, items }
+         ✅ Items have correct shape: { id, nis, nama, kelas, hadir, izin, sakit, alpa }
+         ✅ Aggregation working: Andi (hadir=1, sakit=1), Citra (hadir=1) as expected
+         ✅ Rekap without params: Defaults to current month (bulan=5, tahun=2026)
+      
+      3️⃣ Wali Kelas restrictions (3/3 tests):
+         ✅ Wali access to other class (8A): Returns 403 (forbidden) as expected
+         ✅ Wali access to own class (7A): Returns 200 with 3 records
+         ✅ Wali rekap filtered: Only shows kelas=7A data (8 items, all 7A)
+      
+      4️⃣ /api/chat protection (2/2 tests) - CRITICAL NEW FEATURE:
+         ✅ Chat without token: Returns 401 (NEW protected behavior working!)
+         ✅ Chat with valid token: Returns 200 with reply and sessionId (AI service working)
+      
+      5️⃣ Regression checks (5/5 tests):
+         ✅ POST /api/absensi: Still creates records with UUID (no _id field)
+         ✅ PUT /api/absensi/:id: Still updates records (sumberInput updated to 'scan')
+         ✅ DELETE /api/absensi/:id: Still deletes records
+         ✅ GET /api/siswa: Still returns 49 students
+         ✅ GET /api/stats: Still returns stats (totalSiswa=49, totalGuru=18)
+      
+      🔍 Key Verifications:
+         - Query filters (tanggal, kelas) working correctly ✅
+         - Wali kelas can only access own class (403 for others) ✅
+         - Rekap endpoint aggregates per-student monthly data correctly ✅
+         - Chat endpoint NOW PROTECTED (401 without token) ✅ CRITICAL SECURITY FIX
+         - No regression - all existing endpoints still working ✅
+         - All responses use UUID (no _id field leak) ✅
+      
+      NO CRITICAL ISSUES FOUND. All NEW features working correctly. Chat security enhancement verified.

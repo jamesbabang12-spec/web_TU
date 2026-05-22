@@ -439,6 +439,75 @@ Jawab pertanyaan berdasarkan data di atas. Jika data tidak ada, katakan dengan j
   }
 }
 
+async function handleAbsensi(path, method, req, user) {
+  const col = await getCollection('absensi')
+  const id = path[1]
+
+  // GET /api/absensi/rekap?bulan=Juni&tahun=2025  → per-siswa monthly aggregation
+  if (method === 'GET' && id === 'rekap') {
+    const { searchParams } = new URL(req.url)
+    const tahun = parseInt(searchParams.get('tahun') || new Date().getFullYear())
+    const bulan = parseInt(searchParams.get('bulan') || (new Date().getMonth() + 1)) // 1-12
+
+    // Date range YYYY-MM
+    const ymPrefix = `${tahun}-${String(bulan).padStart(2, '0')}`
+
+    // Pull all absensi for the month (bounded)
+    const records = await col.find(
+      { tanggal: { $regex: `^${ymPrefix}` } },
+      { projection: { _id: 0 } }
+    ).limit(2000).toArray()
+
+    // Optional: filter by wali_kelas's class (defense in depth)
+    const kelasFilter = user.role === 'wali_kelas' ? user.kelas : null
+
+    // Aggregate per siswa
+    const map = new Map() // siswaId -> { nis, nama, kelas, hadir, izin, sakit, alpa }
+    for (const rec of records) {
+      if (kelasFilter && rec.kelas !== kelasFilter) continue
+      for (const item of (rec.items || [])) {
+        const key = item.siswaId || item.nis
+        if (!key) continue
+        if (!map.has(key)) {
+          map.set(key, { id: key, nis: item.nis, nama: item.nama, kelas: rec.kelas, hadir: 0, izin: 0, sakit: 0, alpa: 0 })
+        }
+        const row = map.get(key)
+        const st = (item.status || '').toLowerCase()
+        if (st === 'hadir') row.hadir++
+        else if (st === 'izin') row.izin++
+        else if (st === 'sakit') row.sakit++
+        else if (st === 'alpa' || st === 'alpha') row.alpa++
+      }
+    }
+    const result = Array.from(map.values()).sort((a, b) => (a.nama || '').localeCompare(b.nama || ''))
+    return json({ bulan, tahun, total: result.length, items: result })
+  }
+
+  // GET /api/absensi?tanggal=YYYY-MM-DD&kelas=7A  → single record for date+class
+  // GET /api/absensi  → list (bounded)
+  if (method === 'GET' && !id) {
+    const { searchParams } = new URL(req.url)
+    const tanggal = searchParams.get('tanggal')
+    const kelas = searchParams.get('kelas')
+    const query = {}
+    if (tanggal && typeof tanggal === 'string') query.tanggal = tanggal
+    if (kelas && typeof kelas === 'string') {
+      // Wali kelas can only see their own class
+      if (user.role === 'wali_kelas' && user.kelas && kelas !== user.kelas) {
+        return err('Akses ditolak untuk kelas ini', 403)
+      }
+      query.kelas = kelas
+    } else if (user.role === 'wali_kelas' && user.kelas) {
+      query.kelas = user.kelas
+    }
+    const items = await col.find(query, { projection: { _id: 0 } }).sort({ createdAt: -1 }).limit(500).toArray()
+    return json(items)
+  }
+
+  // Fallback to generic CRUD for GET-by-id / POST / PUT / DELETE
+  return crud('absensi', path, method, req)
+}
+
 async function handle(request, params) {
   await ensureSeeded()
   const path = params?.path || []
@@ -480,18 +549,18 @@ async function handle(request, params) {
     })
   }
 
-  // Chat endpoint - rate-limited per IP (still public per requirement, but throttled)
+  // Protected routes - require auth from here on
+  const user = getAuthFromRequest(request)
+  if (!user) return err('Unauthorized', 401)
+
+  // Chat endpoint - now PROTECTED (requires auth) + rate-limited per IP as defense-in-depth
   if (route === 'chat') {
     const ip = getClientIp(request)
-    if (!checkRateLimit(`chat:${ip}`, 20)) {
+    if (!checkRateLimit(`chat:${user.id}:${ip}`, 20)) {
       return err('Terlalu banyak request chat. Coba lagi nanti.', 429)
     }
     return handleChat(path, method, request)
   }
-
-  // Protected routes
-  const user = getAuthFromRequest(request)
-  if (!user) return err('Unauthorized', 401)
 
   // Per-route role check
   if (!checkPermission(user, route, method)) {
@@ -503,7 +572,7 @@ async function handle(request, params) {
   if (route === 'guru') return crud('guru', path, method, request)
   if (route === 'kelas') return crud('kelas', path, method, request)
   if (route === 'pembayaran') return handlePembayaran(path, method, request)
-  if (route === 'absensi') return crud('absensi', path, method, request)
+  if (route === 'absensi') return handleAbsensi(path, method, request, user)
   if (route === 'surat-masuk') return crud('surat_masuk', path, method, request)
   if (route === 'surat-keluar') return crud('surat_keluar', path, method, request)
   if (route === 'notifikasi') {
