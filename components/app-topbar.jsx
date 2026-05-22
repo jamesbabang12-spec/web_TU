@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { useAuthStore } from '@/lib/store/auth-store'
+import { useBrandingStore } from '@/lib/store/branding-store'
 import { ROLE_LABELS, ROLE_BADGE_COLOR, canAccess } from '@/lib/auth/roles'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,7 @@ export function AppTopbar() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const { user, logout } = useAuthStore()
+  const branding = useBrandingStore((s) => s.branding)
   const [mobileOpen, setMobileOpen] = useState(false)
 
   // If user is null (logging out / not authenticated), don't render any user info
@@ -41,6 +43,9 @@ export function AppTopbar() {
 
   const role = user.role
   const visibleNav = NAV.filter((n) => canAccess(role, n.href))
+  const namaSekolah = branding?.namaSekolah || 'SekolahKu'
+  const tagline = branding?.taglineApp || 'Tata Usaha'
+  const logoUrl = branding?.logoUrl
 
   const handleLogout = () => {
     logout()
@@ -57,8 +62,15 @@ export function AppTopbar() {
         </SheetTrigger>
         <SheetContent side="left" className="w-64 p-0">
           <div className="flex items-center gap-3 h-16 border-b px-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GraduationCap className="h-5 w-5" /></div>
-            <div className="flex flex-col"><span className="text-sm font-bold">SekolahKu</span><span className="text-xs text-muted-foreground">Tata Usaha</span></div>
+            {logoUrl ? (
+              <img src={logoUrl} alt={namaSekolah} className="h-9 w-9 rounded-lg object-cover" />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GraduationCap className="h-5 w-5" /></div>
+            )}
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-bold truncate">{namaSekolah}</span>
+              <span className="text-xs text-muted-foreground truncate">{tagline}</span>
+            </div>
           </div>
           <nav className="p-3 space-y-1">
             {visibleNav.map((item) => {

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/lib/store/ui-store'
 import { useAuthStore } from '@/lib/store/auth-store'
+import { useBrandingStore } from '@/lib/store/branding-store'
 import { canAccess } from '@/lib/auth/roles'
 import { GraduationCap, LayoutDashboard, Users, UserCog, School, Wallet, CalendarCheck, Mail, Settings, ChevronLeft, ChevronRight, Bot, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -26,12 +27,16 @@ export function AppSidebar() {
   const pathname = usePathname()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { user } = useAuthStore()
+  const branding = useBrandingStore((s) => s.branding)
 
   // Don't render sidebar if no user (e.g., during logout transition)
   if (!user) return null
 
   const role = user.role
   const visibleNav = NAV.filter((item) => canAccess(role, item.href))
+  const namaSekolah = branding?.namaSekolah || 'SekolahKu'
+  const tagline = branding?.taglineApp || 'Tata Usaha'
+  const logoUrl = branding?.logoUrl
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -42,13 +47,17 @@ export function AppSidebar() {
         )}
       >
         <div className={cn('flex items-center gap-3 h-16 border-b border-sidebar-border px-4', sidebarCollapsed && 'justify-center px-2')}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <GraduationCap className="h-5 w-5" />
-          </div>
+          {logoUrl ? (
+            <img src={logoUrl} alt={namaSekolah} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+          )}
           {!sidebarCollapsed && (
-            <div className="flex flex-col">
-              <span className="text-sm font-bold leading-tight">SekolahKu</span>
-              <span className="text-xs text-muted-foreground">Tata Usaha</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-bold leading-tight truncate">{namaSekolah}</span>
+              <span className="text-xs text-muted-foreground truncate">{tagline}</span>
             </div>
           )}
         </div>

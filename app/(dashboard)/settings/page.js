@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuthStore } from '@/lib/store/auth-store'
+import { useBrandingStore } from '@/lib/store/branding-store'
 import { useTheme } from 'next-themes'
 import { apiClient } from '@/lib/api/client'
 import { User, Bell, Palette, Shield, School, Camera, Sun, Moon, Monitor, Sparkles, Upload, X, ImageIcon, Loader2, Wallet, Users, BookOpen, ClipboardCheck, Award, Trophy, Briefcase, Heart, Star, GraduationCap } from 'lucide-react'
@@ -36,6 +37,7 @@ const ICON_MAP = ICON_OPTIONS.reduce((acc, x) => { acc[x.value] = x.Icon; return
 export default function SettingsPage() {
   const { user } = useAuthStore()
   const { theme, setTheme } = useTheme()
+  const refreshBranding = useBrandingStore((s) => s.refresh)
   const initials = (user?.name || 'A').split(' ').map(x => x[0]).slice(0, 2).join('')
 
   const [settings, setSettings] = useState(null)
@@ -94,6 +96,7 @@ export default function SettingsPage() {
     setSaving(true)
     try {
       await apiClient.put('/settings', settings)
+      await refreshBranding() // refresh sidebar/topbar/login branding tanpa reload
       toast.success('Pengaturan tampilan login berhasil disimpan!')
     } catch (e) {
       toast.error('Gagal menyimpan pengaturan')
@@ -104,6 +107,7 @@ export default function SettingsPage() {
     setSaving(true)
     try {
       await apiClient.put('/settings', settings)
+      await refreshBranding() // refresh sidebar/topbar untuk nama sekolah baru
       toast.success('Profil sekolah berhasil disimpan')
     } catch (e) { toast.error('Gagal menyimpan') } finally { setSaving(false) }
   }
