@@ -199,6 +199,21 @@ backend:
         agent: "testing"
         comment: "✅ VERIFIED: GET /api/stats working correctly. Returns all required fields: totalSiswa=48, totalGuru=18, totalKelas=10, pembayaranHariIni, pemasukanChart (array), absensiChart (array), kelasDistribusi (array with SMP/SMA breakdown). All data types correct."
 
+  - task: "Absensi (Attendance) CRUD endpoints"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/absensi accepts { tanggal (YYYY-MM-DD), kelas, items: [{siswaId, nis, nama, status}], totalHadir, totalIzin, totalSakit, totalAlpa, sumberInput ('manual'|'scan') }. Uses generic crud() handler. GET returns list. Permissions: GET/POST/PUT allowed for admin/tu/wali_kelas, DELETE admin only. Should be tested for full POST/GET/PUT/DELETE cycle and role permissions (wali_kelas should be allowed to POST)."
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: All absensi tests passed (14/14). Authentication working for all 3 roles (admin/tu/wali_kelas). CRUD operations: POST by Admin creates record with UUID (no _id field), GET list returns records, GET by ID fetches single record, PUT by Wali Kelas updates successfully, POST by Wali Kelas allowed (200). Permission tests: DELETE by Wali Kelas correctly returns 403 (forbidden), DELETE by Admin succeeds (200). Unauthorized access returns 401. UUID format verified (36 chars, 4 hyphens). No _id field leaking. Regression tests: siswa and stats endpoints still working. All role-based permissions working correctly per ROUTE_PERMISSIONS."
+
   - task: "Settings endpoint (school profile + SPP rates)"
     implemented: true
     working: true
@@ -310,3 +325,46 @@ agent_communication:
          - Collections: users, siswa, guru, kelas, pembayaran, surat_masuk, surat_keluar, settings
       
       NO CRITICAL ISSUES FOUND. Backend is production-ready.
+  
+  - agent: "testing"
+    message: |
+      🎉 ABSENSI ENDPOINT TESTS PASSED (14/14) - 100% SUCCESS RATE
+      
+      Comprehensive absensi endpoint testing completed using absensi_test.py with base URL: https://tata-usaha-dashboard.preview.emergentagent.com/api
+      
+      ✅ Authentication (3/3 tests):
+         - Admin login: Token received, role=admin
+         - TU login: Token received, role=tu
+         - Wali Kelas login: Token received, role=wali_kelas
+      
+      ✅ CRUD Operations (5/5 tests):
+         - POST /api/absensi (Admin): Created with UUID, no _id field
+         - GET /api/absensi (Admin): Retrieved records including created one
+         - GET /api/absensi/:id (Admin): Fetched single record successfully
+         - PUT /api/absensi/:id (Wali Kelas): Updated sumberInput to 'scan'
+         - POST /api/absensi (Wali Kelas): Allowed to create (200) ✅
+      
+      ✅ Permission Tests (3/3 tests):
+         - DELETE /api/absensi/:id (Wali Kelas): Correctly returned 403 (forbidden) ✅
+         - DELETE /api/absensi/:id (Admin): Successfully deleted wali's record (200)
+         - DELETE /api/absensi/:id (Admin): Successfully deleted own record (200)
+         - GET /api/absensi (No token): Correctly returned 401 (unauthorized)
+      
+      ✅ Regression Tests (2/2 tests):
+         - GET /api/siswa: Still working (49 students retrieved)
+         - GET /api/stats: Still working (49 siswa, 18 guru)
+      
+      🔍 Key Verifications:
+         - UUID format correct (36 chars, 4 hyphens) ✅
+         - No MongoDB _id field leaking ✅
+         - Permission denied returns 403 (not 401) when token valid but role wrong ✅
+         - Wali Kelas can POST (create) absensi records ✅
+         - Only Admin can DELETE absensi records ✅
+         - Role-based permissions working per ROUTE_PERMISSIONS ✅
+      
+      📊 Test Coverage:
+         - All 10 required test cases from review request completed
+         - Additional regression tests to ensure no breaking changes
+         - All endpoints returning proper JSON with UUID ids
+      
+      NO CRITICAL ISSUES FOUND. Absensi endpoints are production-ready.

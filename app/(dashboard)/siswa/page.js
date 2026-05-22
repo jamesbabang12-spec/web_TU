@@ -15,11 +15,12 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, Download, Users, Loader2, FileSpreadsheet, FileText } from 'lucide-react'
+import { Plus, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, Download, Users, Loader2, FileSpreadsheet, FileText, QrCode, Printer } from 'lucide-react'
 import { KELAS_LIST } from '@/lib/mock-data'
 import { useCrud } from '@/lib/hooks/use-crud'
 import { TableSkeleton, EmptyState } from '@/components/table-helpers'
 import { exportToExcel, exportToPDF } from '@/lib/export'
+import { QRCodeSVG } from 'qrcode.react'
 
 const siswaSchema = z.object({
   nis: z.string().min(4, 'NIS minimal 4 karakter'),
@@ -44,6 +45,7 @@ export default function SiswaPage() {
   const [editing, setEditing] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [qrSiswa, setQrSiswa] = useState(null)
   const pageSize = 10
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
@@ -170,6 +172,7 @@ export default function SiswaPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => openEdit(s)}><Eye className="h-4 w-4 mr-2" /> Detail</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openEdit(s)}><Edit className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setQrSiswa(s)}><QrCode className="h-4 w-4 mr-2 text-blue-600" /> Kartu QR Absensi</DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteId(s.id)}><Trash2 className="h-4 w-4 mr-2" /> Hapus</DropdownMenuItem>
                           </DropdownMenuContent>
@@ -264,6 +267,49 @@ export default function SiswaPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* QR Card Dialog */}
+      <Dialog open={!!qrSiswa} onOpenChange={(o) => !o && setQrSiswa(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><QrCode className="h-5 w-5 text-primary" /> Kartu QR Absensi</DialogTitle>
+            <DialogDescription>QR Code untuk scan absensi siswa</DialogDescription>
+          </DialogHeader>
+          {qrSiswa && (
+            <div className="space-y-4">
+              <div id="qr-card" className="rounded-2xl border-2 bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-500 p-6 text-white print:shadow-none">
+                <div className="bg-white text-foreground rounded-xl p-5 space-y-4">
+                  <div className="text-center border-b pb-3">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Kartu Absensi Siswa</p>
+                    <p className="font-bold text-sm mt-1">SekolahKu</p>
+                  </div>
+                  <div className="flex justify-center bg-white p-2 rounded-lg">
+                    <QRCodeSVG value={qrSiswa.nis} size={180} level="H" includeMargin={false} />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="font-bold text-base leading-tight">{qrSiswa.nama}</p>
+                    <p className="text-xs text-muted-foreground">NIS: <span className="font-mono font-semibold text-foreground">{qrSiswa.nis}</span></p>
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">{qrSiswa.kelas}</span>
+                      <span className="text-xs text-muted-foreground">•</span>
+                      <span className="text-xs text-muted-foreground">{qrSiswa.jenisKelamin}</span>
+                    </div>
+                  </div>
+                  <div className="text-center text-[10px] text-muted-foreground border-t pt-2">
+                    Pindai QR Code ini saat absensi
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="print:hidden">
+                <Button variant="outline" onClick={() => setQrSiswa(null)}>Tutup</Button>
+                <Button onClick={() => { window.print(); toast.success('Mencetak kartu QR...') }}>
+                  <Printer className="h-4 w-4 mr-2" /> Cetak Kartu
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

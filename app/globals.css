@@ -139,3 +139,16 @@ code {
     @apply bg-background text-foreground;
     }
 }
+
+@media print {
+  body * { visibility: hidden; }
+  #qr-card, #qr-card *, #receipt, #receipt * { visibility: visible; }
+  #qr-card, #receipt {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 320px;
+  }
+  @page { margin: 0; size: A6; }
+}
