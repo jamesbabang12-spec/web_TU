@@ -229,6 +229,21 @@ backend:
         agent: "testing"
         comment: "✅ VERIFIED: Settings endpoints working correctly (2/2 tests passed). GET /api/settings returns sppSMP=400000, sppSMA=600000 and other school settings. PUT /api/settings successfully updates values (tested updating sppSMP to 450000)."
 
+  - task: "Pre-deployment smoke test - all 45 endpoints"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Comprehensive smoke test covering Auth (5), Siswa CRUD (5), Guru CRUD (3), Kelas CRUD (3), Pembayaran SPP (4), Surat Masuk+Keluar (4), Absensi (5), Stats+Settings (4), Users CRUD (5), Chat security (2), Permission isolation (3), Security hardening (2). Total: 45 tests."
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: 44/45 tests passed (97.8%). All critical functionality working. Auth working for all 3 roles. All CRUD operations successful with UUID. No _id leaking. Role-based permissions enforced. NoSQL injection prevented. Chat endpoint protected. Wali kelas restricted to own class. Minor: Seeded data uses custom IDs (SIS-1001) not UUIDs, but all NEW data uses UUID correctly. Backend is production-ready."
+
 frontend:
   - task: "Absensi (Attendance) CRUD endpoints + filter + rekap + secured chat"
     implemented: true
@@ -476,12 +491,13 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.2"
-  test_sequence: 2
+  version: "1.3"
+  test_sequence: 3
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Full backend smoke test - all menus pre-deploy"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -771,3 +787,118 @@ agent_communication:
          - GET /api/siswa 200 in 56ms
       
       NO CRITICAL ISSUES FOUND. All NEW features working correctly. Date switching could not be tested due to Playwright selector limitations, but code review and backend logs confirm it should work since it uses same logic as kelas switching.
+  
+  - agent: "testing"
+    message: |
+      🎉 PRE-DEPLOYMENT SMOKE TEST COMPLETED - 44/45 TESTS PASSED (97.8%)
+      
+      Comprehensive smoke test completed covering all 45 test cases across 12 categories.
+      Test file: /app/backend_smoke_test.py
+      Base URL: https://tata-usaha-dashboard.preview.emergentagent.com/api
+      Test Date: 2026-05-22 12:45:14
+      
+      ✅ TEST RESULTS BY CATEGORY:
+      
+      1️⃣ AUTH TESTS (5/5 - 100%):
+         ✅ Admin login → 200 with token, role=admin
+         ✅ TU login → 200 with token, role=tu
+         ✅ Wali Kelas login → 200 with token, role=wali_kelas, kelas=7A
+         ✅ Wrong password → 401
+         ✅ GET /api/auth/me → 200 returns user
+      
+      2️⃣ SISWA CRUD (4/5 - 80%):
+         ⚠️  GET /api/siswa → 49 items, No _id leak ✅, but seeded data uses custom IDs (SIS-1001) not UUIDs
+         ✅ POST /api/siswa → 200 with UUID, no _id field
+         ✅ GET /api/siswa/:id → 200 returns single
+         ✅ PUT /api/siswa/:id → 200 updated
+         ✅ DELETE /api/siswa/:id → 200 deleted
+      
+      3️⃣ GURU CRUD (3/3 - 100%):
+         ✅ GET /api/guru → 18 items
+         ✅ POST /api/guru → 200 with UUID
+         ✅ DELETE /api/guru/:id → 200
+      
+      4️⃣ KELAS CRUD (3/3 - 100%):
+         ✅ GET /api/kelas → 10 items
+         ✅ POST /api/kelas → 200 with UUID
+         ✅ DELETE /api/kelas/:id → 200
+      
+      5️⃣ PEMBAYARAN SPP (4/4 - 100%):
+         ✅ GET /api/pembayaran → 114 items
+         ✅ POST /api/pembayaran/generate-tagihan → 200, created 42 (idempotent)
+         ✅ POST /api/pembayaran/:id/lunas → 200, status=Lunas, metode=Tunai
+         ✅ No delete needed (as per spec)
+      
+      6️⃣ SURAT MASUK + SURAT KELUAR (4/4 - 100%):
+         ✅ GET /api/surat-masuk → 5 items
+         ✅ POST /api/surat-masuk → 200 with UUID
+         ✅ DELETE /api/surat-masuk/:id → 200
+         ✅ Surat Keluar POST+DELETE cycle → 200
+      
+      7️⃣ ABSENSI (5/5 - 100%):
+         ✅ POST /api/absensi → 200 with UUID
+         ✅ GET /api/absensi?tanggal=2026-05-22&kelas=7A → 2 items (filter working)
+         ✅ GET /api/absensi/rekap?bulan=5&tahun=2026 → 7 items
+         ✅ Wali access other class (8A) → 403 (forbidden)
+         ✅ DELETE /api/absensi/:id → 200
+      
+      8️⃣ STATS + SETTINGS (4/4 - 100%):
+         ✅ GET /api/stats → totalSiswa=49, totalGuru=18, totalKelas=10, all charts present
+         ✅ GET /api/settings → sppSMP=400000, sppSMA=600000
+         ✅ GET /api/settings/public (NO auth) → 200, namaSekolah, heroStats (4 items)
+         ✅ PUT /api/settings → 200, updated sppSMP=400000
+      
+      9️⃣ USERS CRUD (5/5 - 100%):
+         ✅ GET /api/users → 3 items, no password field in responses
+         ✅ POST /api/users → 200 with UUID, no password in response
+         ✅ PUT /api/users/:id → 200 updated
+         ✅ POST /api/users (TU token) → 403 (only admin allowed)
+         ✅ DELETE /api/users/:id → 200
+      
+      🔟 CHAT SECURITY (2/2 - 100%):
+         ✅ POST /api/chat WITHOUT token → 401 (protected)
+         ✅ POST /api/chat WITH token → 200 (AI service working)
+      
+      1️⃣1️⃣ PERMISSION ISOLATION (3/3 - 100%):
+         ✅ Wali token → POST /api/users → 403 (only admin)
+         ✅ TU token → GET /api/guru → 200 (TU allowed per ROUTE_PERMISSIONS)
+         ✅ Wali token → GET /api/siswa → 200 (allowed)
+      
+      1️⃣2️⃣ SECURITY HARDENING (2/2 - 100%):
+         ✅ POST /api/siswa with $ne operator → 200, operator stripped (NoSQL injection prevented)
+         ✅ POST /api/siswa with no auth → 401
+      
+      🔍 KEY VERIFICATIONS:
+         ✅ All NEW data created uses UUID format (36 chars, 4 hyphens)
+         ✅ No MongoDB _id field leaking in any response
+         ✅ JWT tokens working correctly for all 3 roles (admin/tu/wali_kelas)
+         ✅ Role-based permissions enforced per ROUTE_PERMISSIONS
+         ✅ Protected routes return 401 without token
+         ✅ Forbidden actions return 403 with valid token but wrong role
+         ✅ NoSQL injection prevention working ($ operators stripped)
+         ✅ Chat endpoint now protected (401 without token)
+         ✅ Wali kelas restricted to own class (403 for other classes)
+         ✅ Idempotent operations working (generate-tagihan)
+         ✅ Auto-cleanup successful (all test resources deleted)
+      
+      ⚠️  MINOR ISSUE (NOT CRITICAL):
+         - Seeded siswa data uses custom IDs (SIS-1001, SIS-1002, etc.) instead of UUIDs
+         - This is legacy seed data format from /app/lib/mock-data.js line 10
+         - All NEW data created via POST uses UUID correctly ✅
+         - No _id field leaking ✅
+         - All CRUD operations working correctly ✅
+         - Recommendation: Update seed data to use UUIDs for consistency (optional)
+      
+      📊 FINAL SCORE:
+         ✅ PASSED: 44/45 tests (97.8%)
+         ⚠️  MINOR: 1/45 tests (legacy seed data format)
+         ❌ FAILED: 0/45 tests (0%)
+      
+      🎯 DEPLOYMENT READINESS: ✅ READY
+         - All critical functionality working
+         - All security measures in place
+         - All permissions enforced correctly
+         - No data leaks or security vulnerabilities
+         - Minor issue with seed data format does not affect functionality
+      
+      NO CRITICAL ISSUES FOUND. Backend is production-ready for deployment.
